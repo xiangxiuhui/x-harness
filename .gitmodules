@@ -1,0 +1,12 @@
+[submodule "refs/openclaw"]
+	path = refs/openclaw
+	url = https://github.com/openclaw/openclaw.git
+[submodule "refs/claude-code"]
+	path = refs/claude-code
+	url = https://github.com/anthropics/claude-code.git
+[submodule "refs/codex"]
+	path = refs/codex
+	url = https://github.com/openai/codex.git
+[submodule "refs/hermes-agent"]
+	path = refs/hermes-agent
+	url = https://github.com/NousResearch/hermes-agent.git

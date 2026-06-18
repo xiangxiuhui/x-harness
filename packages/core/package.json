@@ -1,0 +1,9 @@
+{
+  "name": "@x_harness/core",
+  "version": "0.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "echo 'TODO: spiral 1'"
+  }
+}

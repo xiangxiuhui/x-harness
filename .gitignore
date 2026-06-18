@@ -1,0 +1,36 @@
+# Node / TS
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.pnpm-store/
+.npm/
+.yarn/
+
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+
+# Local data
+.x_harness/
+data/local/
+logs/
+
+# Codeflicker scratch
+.codeflicker/

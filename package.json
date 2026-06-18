@@ -1,0 +1,16 @@
+{
+  "name": "x_harness",
+  "private": true,
+  "version": "0.0.0",
+  "description": "x_harness — AI Operating System harness (TS shell + Rust kernel)",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "echo 'TODO: spiral 1'",
+    "dev": "echo 'TODO: spiral 1'"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

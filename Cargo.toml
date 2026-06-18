@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/x_kernel",
+]
+
+[workspace.package]
+edition = "2021"
+license = "Proprietary"
+repository = "local"
