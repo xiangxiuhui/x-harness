@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/provider" },
+    { "path": "./packages/skills" },
     { "path": "./packages/core" },
     { "path": "./packages/cli" }
   ]

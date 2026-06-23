@@ -1,13 +1,15 @@
 /**
- * Smoke test: send one message, print streaming reply, exit.
+ * Smoke test: send one message, render the (possibly tool-using) reply, exit.
  *
  * Usage:
- *   DEEPSEEK_API_KEY=sk-xxx pnpm tsx packages/cli/src/smoke.ts "hello"
+ *   DEEPSEEK_API_KEY=sk-xxx pnpm tsx packages/cli/src/smoke.ts "list files in current dir"
  */
 
 import { loadDotEnv } from './dotenv.js';
 import { Session, actorBadge } from '@x_harness/core';
 import { createDeepSeekProviderFromEnv } from '@x_harness/provider';
+import { buildSkillRegistry } from '@x_harness/skills';
+import { findRepoRoot } from './repo.js';
 
 async function main(): Promise<number> {
   loadDotEnv();
@@ -21,25 +23,48 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  const repoRoot = findRepoRoot(process.cwd());
+  const registry = buildSkillRegistry({ repoRoot });
   const session = new Session({
     provider,
     humanUserId: process.env.USER ?? 'human',
     humanSurface: 'cli',
-    systemPrompt: 'You are running inside x_harness. Be very concise.',
+    systemPrompt:
+      'You are running inside x_harness. Be very concise. Use tools when needed.',
+    skills: registry,
+    cwd: process.cwd(),
   });
 
-  process.stdout.write(
-    `${actorBadge(session.humanActor)} > ${prompt}\n${actorBadge(session.modelActor)} `,
-  );
+  process.stdout.write(`${actorBadge(session.humanActor)} > ${prompt}\n`);
   session.pushUser(prompt);
-  let any = false;
-  for await (const chunk of session.streamReply()) {
-    if (chunk.deltaContent) {
-      any = true;
-      process.stdout.write(chunk.deltaContent);
+  let started = false;
+  for await (const ev of session.streamReply()) {
+    switch (ev.kind) {
+      case 'assistant.delta':
+        if (!started) {
+          process.stdout.write(`${actorBadge(session.modelActor)} `);
+          started = true;
+        }
+        process.stdout.write(ev.text);
+        break;
+      case 'assistant.done':
+        if (started) process.stdout.write('\n');
+        started = false;
+        break;
+      case 'tool.call':
+        process.stdout.write(
+          `\x1b[90m  → tool:${ev.name} ${ev.argumentsJson}\x1b[0m\n`,
+        );
+        break;
+      case 'tool.result':
+        process.stdout.write(
+          `\x1b[90m  ← tool:${ev.name}${ev.error ? ' (error)' : ''}\x1b[0m\n`,
+        );
+        break;
+      case 'turn.done':
+        break;
     }
   }
-  process.stdout.write(any ? '\n' : '(no content)\n');
   return 0;
 }
 

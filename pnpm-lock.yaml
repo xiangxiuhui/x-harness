@@ -26,18 +26,28 @@ importers:
       '@x_harness/provider':
         specifier: workspace:*
         version: link:../provider
+      '@x_harness/skills':
+        specifier: workspace:*
+        version: link:../skills
 
   packages/core:
     dependencies:
       '@x_harness/provider':
         specifier: workspace:*
         version: link:../provider
+      '@x_harness/skills':
+        specifier: workspace:*
+        version: link:../skills
 
   packages/memory: {}
 
   packages/provider: {}
 
-  packages/skills: {}
+  packages/skills:
+    dependencies:
+      '@x_harness/provider':
+        specifier: workspace:*
+        version: link:../provider
 
   packages/ui: {}
 

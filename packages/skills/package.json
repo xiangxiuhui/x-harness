@@ -1,9 +1,16 @@
 {
   "name": "@x_harness/skills",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
-  "main": "src/index.ts",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "build": "echo 'TODO: spiral 1'"
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@x_harness/provider": "workspace:*"
   }
 }
