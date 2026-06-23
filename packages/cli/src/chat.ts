@@ -7,6 +7,18 @@ const DEFAULT_SYSTEM_PROMPT =
   "You are running inside x_harness, an AI operating system harness. " +
   "Be concise, useful, and prefer concrete answers.";
 
+const EXIT_WORDS = new Set([
+  '/exit',
+  '/quit',
+  '/q',
+  ':q',
+  ':quit',
+  'exit',
+  'quit',
+  'bye',
+  'q',
+]);
+
 export async function runChat(_args: string[]): Promise<number> {
   let provider;
   try {
@@ -25,18 +37,35 @@ export async function runChat(_args: string[]): Promise<number> {
 
   stdout.write(
     `\n${actorBadge(session.humanActor)} ↔ ${actorBadge(session.modelActor)}\n` +
-      `(session ${session.id}; type \`/exit\` to quit, \`/reset\` to clear)\n\n`,
+      `(session ${session.id})\n` +
+      `(commands: exit | quit | bye | /reset    keys: Ctrl+C aborts reply, Ctrl+D exits)\n\n`,
   );
 
   const rl = readline.createInterface({ input: stdin, output: stdout });
-  const ac = new AbortController();
+
+  // Per-request abort controller; refreshed every turn so that aborting a
+  // streaming reply does NOT poison the next turn.
+  let inFlight: AbortController | null = null;
+
+  // Ctrl+C handling:
+  //   • during a streaming reply  → abort that one reply
+  //   • at the prompt with nothing in flight → exit
   rl.on('SIGINT', () => {
-    ac.abort();
-    rl.write('\n[interrupted]\n');
+    if (inFlight) {
+      inFlight.abort();
+    } else {
+      stdout.write('\n(Ctrl+C at prompt → bye)\n');
+      rl.close();
+    }
   });
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  // Ctrl+D / EOF → exit gracefully
+  let closedByEof = false;
+  rl.on('close', () => {
+    closedByEof = true;
+  });
+
+  while (!closedByEof) {
     let input: string;
     try {
       input = (
@@ -45,26 +74,49 @@ export async function runChat(_args: string[]): Promise<number> {
     } catch {
       break;
     }
+    if (closedByEof) break;
     if (!input) continue;
-    if (input === '/exit' || input === '/quit') break;
+
+    if (EXIT_WORDS.has(input.toLowerCase())) break;
     if (input === '/reset') {
       stdout.write('[session reset not yet implemented; restart `x chat`]\n');
+      continue;
+    }
+    if (input === '/help' || input === '?') {
+      stdout.write(
+        '  exit | quit | bye | q | :q     — leave\n' +
+          '  Ctrl+C during reply           — abort the current reply\n' +
+          '  Ctrl+C at prompt              — leave\n' +
+          '  Ctrl+D                        — leave\n' +
+          '  /reset                        — (not implemented yet)\n',
+      );
       continue;
     }
 
     session.pushUser(input);
     stdout.write(`${actorBadge(session.modelActor)} `);
+    inFlight = new AbortController();
+    let gotAny = false;
     try {
-      for await (const chunk of session.streamReply(ac.signal)) {
-        if (chunk.deltaContent) stdout.write(chunk.deltaContent);
+      for await (const chunk of session.streamReply(inFlight.signal)) {
+        if (chunk.deltaContent) {
+          gotAny = true;
+          stdout.write(chunk.deltaContent);
+        }
       }
-      stdout.write('\n\n');
+      stdout.write(gotAny ? '\n\n' : '(no content)\n\n');
     } catch (e) {
-      stdout.write(`\n\x1b[31m[error] ${(e as Error).message}\x1b[0m\n\n`);
+      if (inFlight.signal.aborted) {
+        stdout.write('\n\x1b[33m[aborted]\x1b[0m\n\n');
+      } else {
+        stdout.write(`\n\x1b[31m[error] ${(e as Error).message}\x1b[0m\n\n`);
+      }
+    } finally {
+      inFlight = null;
     }
   }
 
-  rl.close();
+  if (!closedByEof) rl.close();
   stdout.write('bye.\n');
   return 0;
 }
