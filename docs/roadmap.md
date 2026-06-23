@@ -99,9 +99,10 @@
 - ✅ 第一螺旋 model：**DeepSeek**（[ADR 0003](decisions/0003-first-provider.md)）
 - ✅ UI 形态：**本地 Web（Vite+React），按"将来包 Tauri"约束设计**（[ADR 0004](decisions/0004-ui-form-factor-mvp.md)）
 - ✅ macOS Actor 标签：**xattr `com.x_harness.actor.*`，预留 ES 升级路径**（[ADR 0002](decisions/0002-actor-tag-macos.md)）
+- ✅ 危险操作规则集：**Class A 人类账号 / Class B 自存续；其他全放行**（[ADR 0005](decisions/0005-danger-rules.md)）
 
 ## 仍待对齐（不阻塞螺旋 1 启动）
 
 - [ ] DeepSeek 流式协议在弱网下的重试参数（边跑边调）
-- [ ] 危险操作命中规则的初始版规则集（先列在 docs/decisions/0005-danger-rules.md，待写）
 - [ ] memory 的 embedding 是否第一螺旋就接（候选：先纯关键词，第二螺旋上 embedding）
+- [ ] ADR 0006 Skill / Plugin 形态对齐 claude-code 五件套（编码开始前补一份）

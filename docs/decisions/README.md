@@ -10,6 +10,7 @@
 | [0002](0002-actor-tag-macos.md) | macOS Actor 标签落地方案 | Accepted (MVP) / Upgrade Path Reserved |
 | [0003](0003-first-provider.md) | 第一螺旋 Model Provider：DeepSeek | Accepted |
 | [0004](0004-ui-form-factor-mvp.md) | UI 第一形态：本地 Web，预留 Tauri 升级 | Accepted |
+| [0005](0005-danger-rules.md) | 危险操作规则集（Class A 人类账号 / Class B 自存续） | Accepted |
 
 ## ADR 模板
 

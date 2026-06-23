@@ -51,10 +51,15 @@ x_harness 的 UI 形态会非常多元（CLI / 浏览器插件 / System Super Ap
 
 ## 5. 权限策略：信任但可审计
 
-- 默认 **裸跑**：模型可以执行系统命令、读写文件、访问网络。
-- **危险操作确认**：删除 / 提权 / 网络写 / 跨 actor 边界的动作必须人类二次确认。
-- **全量审计**：每一次 tool 调用、每一次 IO，按 actor 标签持久化，可回放。
-- 后期可选 sandbox（macOS seatbelt / Linux landlock / Windows AppContainer）。
+**前提立场**：x_harness 是给 AI 使用的操作系统；AI 是常驻主人，人类是协作者/审计者。我们**不替 AI 自我审查**。
+
+- 默认 **裸跑**：模型可以执行系统命令、读写文件、访问网络、装软件、`sudo` 任意命令。
+- **危险信号**只来自两类（详见 [ADR 0005](decisions/0005-danger-rules.md)）：
+  - **Class A — 人类账号 / 资金权益类**：动作副作用作用在人类账户/信用/资金，且不可由 x_harness 自行回滚。
+  - **Class B — x_harness 自存续类**：动作可能让 x_harness 无法继续工作或回到稳定状态。
+- 命中 → 弹确认 → 走 actor 总线"human-approved"。
+- **全量审计**：每一次 tool 调用、每一次 IO 按 actor 标签持久化，可回放。
+- 后期可选 sandbox（macOS seatbelt / Linux landlock / Windows AppContainer），但 sandbox **不是必须项**——它是 Class B 的"再下一层防御"，不是普适约束。
 
 ## 6. 自学习进化
 
