@@ -1,14 +1,20 @@
 {
   "name": "x_harness",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "x_harness — AI Operating System harness (TS shell + Rust kernel)",
-  "workspaces": [
-    "packages/*"
-  ],
+  "type": "module",
+  "packageManager": "pnpm@9.12.1",
   "scripts": {
-    "build": "echo 'TODO: spiral 1'",
-    "dev": "echo 'TODO: spiral 1'"
+    "x": "tsx packages/cli/src/index.ts",
+    "chat": "tsx packages/cli/src/index.ts chat",
+    "typecheck": "tsc -b --pretty",
+    "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
   },
   "engines": {
     "node": ">=20"

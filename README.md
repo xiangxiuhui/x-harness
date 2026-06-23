@@ -48,24 +48,29 @@ x_harness/
 
 ## 第一螺旋（macOS）目标
 
-- [ ] CLI 跑通
+- [x] CLI 跑通（`x chat` 流式对话）
 - [ ] UI 入口（最小）跑通
-- [ ] 1 个 model API（先选定一家）打通对话回路
-- [ ] Skills 运行时 v0
+- [x] 1 个 model API 打通对话回路（DeepSeek, ADR 0003）
+- [ ] Skills 运行时 v0（ADR 0006）
 - [ ] 记忆 / 知识管理 v0
 - [ ] 自学习进化 v0（仅采集 + UI 标注回路）
-- [ ] 危险操作确认（rm -rf / sudo / 网络写）
+- [ ] 危险操作拦截（ADR 0005：Class A / Class B）
 
 详见 `docs/roadmap.md`。
 
+## 快速起步
+
+```bash
+pnpm install
+cp .env.example .env   # 填 DEEPSEEK_API_KEY
+pnpm x chat            # 交互式对话
+# 或单轮烟雾测试：
+pnpm tsx packages/cli/src/smoke.ts "hello"
+```
+
 ## 参考项目（git submodule）
 
-| 项目 | 主要借鉴点（待 docs/comparison 详写） |
-|------|----------------------------------------|
-| hermes-agent | reasoning / 多步推理 |
-| openclaw | （拉下来后核实）|
-| claude-code | TS 外壳工程化、tool 协议、permission 模型 |
-| codex | Rust 内核、sandbox 实现、多 provider |
+见 `docs/comparison/`：4 份详细对照笔记 + 交叉结论。
 
 ## 怎么参与
 

@@ -11,6 +11,7 @@
 | [0003](0003-first-provider.md) | 第一螺旋 Model Provider：DeepSeek | Accepted |
 | [0004](0004-ui-form-factor-mvp.md) | UI 第一形态：本地 Web，预留 Tauri 升级 | Accepted |
 | [0005](0005-danger-rules.md) | 危险操作规则集（Class A 人类账号 / Class B 自存续） | Accepted |
+| [0006](0006-skill-plugin-form.md) | Skill / Plugin 形态对齐 claude-code 五件套 | Accepted |
 
 ## ADR 模板
 
