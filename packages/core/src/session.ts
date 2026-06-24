@@ -33,6 +33,48 @@ export interface SessionOptions {
    * `false` to block. If absent, all confirms become blocks (fail-closed).
    */
   confirmDanger?: ConfirmDangerHandler;
+  /** Optional audit/memory sink — called as events happen. */
+  memory?: MemorySink;
+  /** If provided, Session replays these as its initial message buffer
+   * (after the systemPrompt if any). Used by `x chat --resume`. */
+  resumeMessages?: ReadonlyArray<Message>;
+  /** When resuming, override the auto-generated id. */
+  sessionId?: string;
+}
+
+/**
+ * Minimal, dep-free contract for whatever wants to persist Session events.
+ * Implemented by `@x_harness/memory`'s MemoryStore.
+ */
+export interface MemorySink {
+  onSystemPrompt?(content: string): void | Promise<void>;
+  onUserMessage?(content: string): void | Promise<void>;
+  onAssistantMessage?(payload: {
+    content: string;
+    finishReason?: string;
+    toolCalls?: ToolCall[];
+  }): void | Promise<void>;
+  onToolCall?(payload: { id: string; name: string; argumentsJson: string }): void | Promise<void>;
+  onToolDanger?(payload: {
+    id: string;
+    name: string;
+    decision: 'confirm' | 'block';
+    headline: string;
+    ruleIds: string[];
+  }): void | Promise<void>;
+  onToolApproval?(payload: {
+    id: string;
+    name: string;
+    decision: 'allow' | 'allow-and-preapprove' | 'deny';
+    preapprovedRuleIds?: string[];
+  }): void | Promise<void>;
+  onToolResult?(payload: {
+    id: string;
+    name: string;
+    output: string;
+    error?: boolean;
+    blocked?: boolean;
+  }): void | Promise<void>;
 }
 
 export type ConfirmDangerHandler = (req: {
@@ -88,9 +130,11 @@ export class Session {
   private readonly confirmDanger?: ConfirmDangerHandler;
   /** Mutable per-session pre-approvals (rule id -> true). */
   private classAPreapprovals: Record<string, boolean>;
+  private readonly memory?: MemorySink;
 
   constructor(opts: SessionOptions) {
-    this.id = `sess-${Math.random().toString(36).slice(2, 10)}`;
+    this.id = opts.sessionId ?? `sess-${Math.random().toString(36).slice(2, 10)}`;
+    this.memory = opts.memory;
     this.bus = opts.bus ?? new ActorBus();
     this.provider = opts.provider;
     this.skills = opts.skills;
@@ -113,6 +157,21 @@ export class Session {
     };
     if (opts.systemPrompt) {
       this.messages.push({ role: 'system', content: opts.systemPrompt });
+      void this.memory?.onSystemPrompt?.(opts.systemPrompt);
+    }
+    if (opts.resumeMessages && opts.resumeMessages.length > 0) {
+      // Skip leading system message if it duplicates the new systemPrompt.
+      let start = 0;
+      if (
+        opts.systemPrompt &&
+        opts.resumeMessages[0]?.role === 'system' &&
+        opts.resumeMessages[0]?.content === opts.systemPrompt
+      ) {
+        start = 1;
+      }
+      for (let i = start; i < opts.resumeMessages.length; i++) {
+        this.messages.push(opts.resumeMessages[i]!);
+      }
     }
     this.bus.publish({
       actor: { kind: 'system', subsystem: 'session' },
@@ -128,6 +187,7 @@ export class Session {
       kind: 'message.user',
       payload: { content },
     });
+    void this.memory?.onUserMessage?.(content);
   }
 
   async *streamReply(signal?: AbortSignal): AsyncIterable<TurnEvent> {
@@ -189,6 +249,11 @@ export class Session {
         payload: { content: accumulatedText, finishReason, toolCalls },
       });
       yield { kind: 'assistant.done', text: accumulatedText };
+      await this.memory?.onAssistantMessage?.({
+        content: accumulatedText,
+        finishReason,
+        toolCalls,
+      });
 
       if (toolCalls.length === 0 || !this.skills) {
         yield { kind: 'turn.done' };
@@ -218,6 +283,11 @@ export class Session {
           name: call.name,
           argumentsJson: call.argumentsJson,
         };
+        await this.memory?.onToolCall?.({
+          id: call.id,
+          name: call.name,
+          argumentsJson: call.argumentsJson,
+        });
 
         let output: string;
         let error: boolean | undefined;
@@ -266,8 +336,22 @@ export class Session {
                 payload: { id: call.id, name: call.name, blocked: true, reason: verdict.reason },
               });
               yield { kind: 'tool.danger', id: call.id, name: call.name, verdict };
+              await this.memory?.onToolDanger?.({
+                id: call.id,
+                name: call.name,
+                decision: 'block',
+                headline: verdict.reason,
+                ruleIds: [],
+              });
             } else if (verdict.decision === 'confirm') {
               yield { kind: 'tool.danger', id: call.id, name: call.name, verdict };
+              await this.memory?.onToolDanger?.({
+                id: call.id,
+                name: call.name,
+                decision: 'confirm',
+                headline: verdict.headline,
+                ruleIds: verdict.hits.map((h) => h.ruleId),
+              });
               const decision = this.confirmDanger
                 ? await this.confirmDanger({
                     verdict,
@@ -275,6 +359,13 @@ export class Session {
                     args: parsedArgs,
                   })
                 : { decision: 'deny' as const };
+              await this.memory?.onToolApproval?.({
+                id: call.id,
+                name: call.name,
+                decision: decision.decision,
+                preapprovedRuleIds:
+                  decision.decision === 'allow-and-preapprove' ? decision.ruleIds : undefined,
+              });
               if (decision.decision === 'deny') {
                 allowed = false;
                 output = `[denied by user] ${verdict.headline}`;
@@ -332,6 +423,13 @@ export class Session {
           error,
           blocked,
         };
+        await this.memory?.onToolResult?.({
+          id: call.id,
+          name: call.name,
+          output: output!,
+          error,
+          blocked,
+        });
       }
     }
   }

@@ -7,20 +7,21 @@
 
 import { loadDotEnv } from './dotenv.js';
 import { runChat } from './chat.js';
+import { runSessions } from './sessions.js';
 
 const USAGE = `x_harness CLI (spiral 1)
 
 Usage:
-  x chat                 Start an interactive chat with DeepSeek.
-  x run "<task>"         (not implemented yet)
-  x ui                   (not implemented yet)
-  x ls-actor <path>      (not implemented yet)
+  x chat [--resume <id>]      Start an interactive chat with DeepSeek.
+  x sessions ls               List recorded sessions.
+  x sessions show <id>        Print a session transcript (audit view).
   x version
 
 Environment:
   DEEPSEEK_API_KEY       required for \`x chat\`
   DEEPSEEK_BASE_URL      default: https://api.deepseek.com
   DEEPSEEK_MODEL         default: deepseek-chat
+  X_HARNESS_HOME         default: ~/.x_harness
 `;
 
 async function main(): Promise<number> {
@@ -40,6 +41,8 @@ async function main(): Promise<number> {
       return 0;
     case 'chat':
       return runChat(rest);
+    case 'sessions':
+      return runSessions(rest);
     default:
       process.stderr.write(`unknown command: ${cmd}\n\n${USAGE}`);
       return 2;

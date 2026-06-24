@@ -1,16 +1,18 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as readline from 'node:readline/promises';
-import { stdin, stdout } from 'node:process';
+import { stdin, stdout, stderr } from 'node:process';
 import {
   Session,
   actorBadge,
   type ConfirmDangerHandler,
   type DangerConfirmation,
+  type MemorySink,
 } from '@x_harness/core';
 import { createDeepSeekProviderFromEnv } from '@x_harness/provider';
 import { buildSkillRegistry } from '@x_harness/skills';
 import { DangerEngine, defaultDangerContext } from '@x_harness/danger';
+import { MemoryStore, readSession, replayToMessages } from '@x_harness/memory';
 import { findRepoRoot } from './repo.js';
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -31,7 +33,21 @@ const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
 const BOLD_RED = '\x1b[1;31m';
 
-export async function runChat(_args: string[]): Promise<number> {
+export async function runChat(args: string[]): Promise<number> {
+  let resumeId: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === '--resume') {
+      resumeId = args[i + 1];
+      i++;
+    } else if (a.startsWith('--resume=')) {
+      resumeId = a.slice('--resume='.length);
+    } else {
+      stderr.write(`unknown chat arg: ${a}\n`);
+      return 2;
+    }
+  }
+
   let provider;
   try {
     provider = createDeepSeekProviderFromEnv();
@@ -60,6 +76,87 @@ export async function runChat(_args: string[]): Promise<number> {
   const confirmDanger: ConfirmDangerHandler = async ({ verdict, toolName, args }) =>
     promptConfirm(rl, verdict, toolName, args);
 
+  // Resume support
+  let resumeMessages;
+  let sessionId;
+  if (resumeId) {
+    const entries = await readSession(xHarnessHome, resumeId);
+    if (entries.length === 0) {
+      stdout.write(`${RED}no session found: ${resumeId}${RESET}\n`);
+      return 1;
+    }
+    resumeMessages = replayToMessages(entries);
+    sessionId = resumeId;
+    stdout.write(`${DIM}(resuming ${resumeId}: ${resumeMessages.length} messages)${RESET}\n`);
+  }
+
+  const store = await MemoryStore.open({
+    home: xHarnessHome,
+    sessionId: sessionId ?? `sess-${Math.random().toString(36).slice(2, 10)}`,
+    cwd: process.cwd(),
+    userId: process.env.USER ?? 'human',
+    model: { provider: provider.name, model: provider.defaultModel },
+  });
+
+  // For a resumed session, don't replay session.start; for a fresh one, emit it.
+  if (!resumeId) {
+    await store.append({
+      actor: { kind: 'system', subsystem: 'session' },
+      kind: 'session.start',
+      payload: {
+        sessionId: store.filePath.split('/').slice(-1)[0]!.replace(/\.jsonl$/, ''),
+        model: { provider: provider.name, model: provider.defaultModel },
+        cwd: process.cwd(),
+        xHarnessHome,
+      },
+    });
+  }
+
+  const memorySink: MemorySink = {
+    onSystemPrompt: (content) =>
+      store.append({
+        actor: { kind: 'system', subsystem: 'session' },
+        kind: 'system.message',
+        payload: { content },
+      }),
+    onUserMessage: (content) =>
+      store.append({
+        actor: { kind: 'human', userId: process.env.USER ?? 'human', surface: 'cli' },
+        kind: 'user.message',
+        payload: { content },
+      }),
+    onAssistantMessage: (p) =>
+      store.append({
+        actor: { kind: 'model', provider: provider.name, model: provider.defaultModel },
+        kind: 'assistant.message',
+        payload: p,
+      }),
+    onToolCall: (p) =>
+      store.append({
+        actor: { kind: 'model', provider: provider.name, model: provider.defaultModel },
+        kind: 'tool.call',
+        payload: p,
+      }),
+    onToolDanger: (p) =>
+      store.append({
+        actor: { kind: 'system', subsystem: 'danger-guard' },
+        kind: 'tool.danger',
+        payload: p,
+      }),
+    onToolApproval: (p) =>
+      store.append({
+        actor: { kind: 'human', userId: process.env.USER ?? 'human', surface: 'cli' },
+        kind: 'tool.approval',
+        payload: p,
+      }),
+    onToolResult: (p) =>
+      store.append({
+        actor: { kind: 'skill', name: p.name, source: 'builtin' },
+        kind: 'tool.result',
+        payload: p,
+      }),
+  };
+
   const session = new Session({
     provider,
     humanUserId: process.env.USER ?? 'human',
@@ -70,6 +167,9 @@ export async function runChat(_args: string[]): Promise<number> {
     dangerEngine,
     dangerContext,
     confirmDanger,
+    memory: memorySink,
+    resumeMessages,
+    sessionId: store.filePath.split('/').slice(-1)[0]!.replace(/\.jsonl$/, ''),
   });
 
   const skillNames = registry.executable().map((s) => s.frontmatter.name);
@@ -95,6 +195,7 @@ export async function runChat(_args: string[]): Promise<number> {
     }
   });
 
+  let turns = 0;
   while (!closedByEof) {
     let input: string;
     try {
@@ -127,6 +228,7 @@ export async function runChat(_args: string[]): Promise<number> {
     }
 
     session.pushUser(input);
+    turns++;
     inFlight = new AbortController();
     let assistantStarted = false;
     try {
@@ -182,7 +284,8 @@ export async function runChat(_args: string[]): Promise<number> {
   }
 
   if (!closedByEof) rl.close();
-  stdout.write('bye.\n');
+  await store.close(closedByEof ? 'eof' : 'bye', turns);
+  stdout.write(`bye.  ${DIM}(audit: ${store.filePath})${RESET}\n`);
   return 0;
 }
 

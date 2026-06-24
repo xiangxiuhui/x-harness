@@ -26,6 +26,9 @@ importers:
       '@x_harness/danger':
         specifier: workspace:*
         version: link:../danger
+      '@x_harness/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@x_harness/provider':
         specifier: workspace:*
         version: link:../provider
@@ -47,7 +50,11 @@ importers:
 
   packages/danger: {}
 
-  packages/memory: {}
+  packages/memory:
+    dependencies:
+      '@x_harness/provider':
+        specifier: workspace:*
+        version: link:../provider
 
   packages/provider: {}
 

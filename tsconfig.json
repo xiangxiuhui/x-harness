@@ -4,6 +4,7 @@
     { "path": "./packages/provider" },
     { "path": "./packages/danger" },
     { "path": "./packages/skills" },
+    { "path": "./packages/memory" },
     { "path": "./packages/core" },
     { "path": "./packages/cli" }
   ]
