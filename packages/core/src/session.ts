@@ -6,6 +6,11 @@ import type {
   ToolCall,
 } from '@x_harness/provider';
 import type { SkillRegistry } from '@x_harness/skills';
+import type {
+  DangerContext,
+  DangerEngine,
+  DangerVerdict,
+} from '@x_harness/danger';
 import { ActorBus } from './bus.js';
 import type { Actor, HumanSurface } from './actor.js';
 
@@ -20,14 +25,46 @@ export interface SessionOptions {
   cwd?: string;
   /** Safety cap on assistant↔tool ping-pong per user turn. */
   maxToolRounds?: number;
+  /** Optional danger guard. */
+  dangerEngine?: DangerEngine;
+  dangerContext?: DangerContext;
+  /**
+   * Called when a confirm verdict is reached. Must resolve to `true` to allow,
+   * `false` to block. If absent, all confirms become blocks (fail-closed).
+   */
+  confirmDanger?: ConfirmDangerHandler;
 }
+
+export type ConfirmDangerHandler = (req: {
+  verdict: Extract<DangerVerdict, { decision: 'confirm' }>;
+  toolName: string;
+  args: Record<string, unknown>;
+}) => Promise<DangerConfirmation>;
+
+export type DangerConfirmation =
+  | { decision: 'allow' }
+  | { decision: 'allow-and-preapprove'; ruleIds: string[] }
+  | { decision: 'deny' };
 
 /** Events surfaced by Session.streamReply() (the "outer turn" stream). */
 export type TurnEvent =
   | { kind: 'assistant.delta'; text: string }
   | { kind: 'assistant.done'; text: string }
   | { kind: 'tool.call'; id: string; name: string; argumentsJson: string }
-  | { kind: 'tool.result'; id: string; name: string; output: string; error?: boolean }
+  | {
+      kind: 'tool.danger';
+      id: string;
+      name: string;
+      verdict: Extract<DangerVerdict, { decision: 'confirm' }> | Extract<DangerVerdict, { decision: 'block' }>;
+    }
+  | {
+      kind: 'tool.result';
+      id: string;
+      name: string;
+      output: string;
+      error?: boolean;
+      blocked?: boolean;
+    }
   | { kind: 'turn.done' };
 
 interface ToolCallAccum {
@@ -36,19 +73,6 @@ interface ToolCallAccum {
   args: string;
 }
 
-/**
- * A single conversational session.
- *
- * On streamReply():
- *   - call provider with messages (and tool specs if registry has executables)
- *   - stream assistant deltas
- *   - when finish_reason === 'tool_calls', dispatch each call to the registry,
- *     append tool results, and loop until the model stops calling tools (or
- *     maxToolRounds is hit).
- *
- * Danger guard / actor-tag-writing will hook into the same place in the next
- * step (between detecting a tool call and actually invoking the handler).
- */
 export class Session {
   readonly id: string;
   readonly bus: ActorBus;
@@ -59,6 +83,11 @@ export class Session {
   private readonly skills?: SkillRegistry;
   private readonly cwd: string;
   private readonly maxToolRounds: number;
+  private readonly dangerEngine?: DangerEngine;
+  private readonly dangerContext?: DangerContext;
+  private readonly confirmDanger?: ConfirmDangerHandler;
+  /** Mutable per-session pre-approvals (rule id -> true). */
+  private classAPreapprovals: Record<string, boolean>;
 
   constructor(opts: SessionOptions) {
     this.id = `sess-${Math.random().toString(36).slice(2, 10)}`;
@@ -67,6 +96,10 @@ export class Session {
     this.skills = opts.skills;
     this.cwd = opts.cwd ?? process.cwd();
     this.maxToolRounds = opts.maxToolRounds ?? 8;
+    this.dangerEngine = opts.dangerEngine;
+    this.dangerContext = opts.dangerContext;
+    this.confirmDanger = opts.confirmDanger;
+    this.classAPreapprovals = { ...(opts.dangerContext?.classAPreapprovals ?? {}) };
     this.humanActor = {
       kind: 'human',
       userId: opts.humanUserId,
@@ -97,10 +130,6 @@ export class Session {
     });
   }
 
-  /**
-   * Drive one user turn end-to-end. Yields TurnEvents until the model has
-   * produced a final assistant message with no further tool calls.
-   */
   async *streamReply(signal?: AbortSignal): AsyncIterable<TurnEvent> {
     const tools = this.skills?.toolSpecs() ?? [];
     const useTools = tools.length > 0;
@@ -147,7 +176,6 @@ export class Session {
         toolCalls.push({ id: a.id, name: a.name, argumentsJson: a.args || '{}' });
       }
 
-      // Persist the assistant message exactly as provider expects it back.
       const assistantMsg: Message = {
         role: 'assistant',
         content: accumulatedText,
@@ -177,7 +205,6 @@ export class Session {
         return;
       }
 
-      // Dispatch each tool call (sequentially, deterministic for spiral 1).
       for (const call of toolCalls) {
         const skill = this.skills.get(call.name);
         this.bus.publish({
@@ -194,47 +221,118 @@ export class Session {
 
         let output: string;
         let error: boolean | undefined;
+        let blocked: boolean | undefined;
+
+        // Parse args once (needed for both danger check and handler)
+        let parsedArgs: Record<string, unknown> = {};
+        let parseError: string | null = null;
+        try {
+          parsedArgs = call.argumentsJson ? JSON.parse(call.argumentsJson) : {};
+        } catch (e) {
+          parseError = (e as Error).message;
+        }
+
         if (!skill || !skill.handler) {
           output = `error: skill \`${call.name}\` is not executable in this runtime.`;
           error = true;
+        } else if (parseError) {
+          output = `error: could not parse tool arguments: ${parseError}`;
+          error = true;
         } else {
-          let parsedArgs: Record<string, unknown> = {};
-          try {
-            parsedArgs = call.argumentsJson ? JSON.parse(call.argumentsJson) : {};
-          } catch (e) {
-            output = `error: could not parse tool arguments: ${(e as Error).message}`;
-            error = true;
-            this.appendToolResult(call.id, output);
-            this.bus.publish({
-              actor: { kind: 'system', subsystem: 'skill-runtime' },
-              kind: 'tool.result',
-              payload: { id: call.id, name: call.name, output, error },
-            });
-            yield { kind: 'tool.result', id: call.id, name: call.name, output, error };
-            continue;
+          // Danger guard
+          let allowed = true;
+          if (this.dangerEngine && this.dangerContext) {
+            const ctx: DangerContext = {
+              ...this.dangerContext,
+              classAPreapprovals: this.classAPreapprovals,
+            };
+            const verdict = this.dangerEngine.evaluate(
+              {
+                kind: 'tool-call',
+                toolName: skill.frontmatter.name,
+                args: parsedArgs,
+                cwd: this.cwd,
+              },
+              ctx,
+            );
+            if (verdict.decision === 'block') {
+              allowed = false;
+              output = `[blocked by danger guard] ${verdict.reason}`;
+              error = true;
+              blocked = true;
+              this.bus.publish({
+                actor: { kind: 'system', subsystem: 'danger-guard' },
+                kind: 'tool.result',
+                payload: { id: call.id, name: call.name, blocked: true, reason: verdict.reason },
+              });
+              yield { kind: 'tool.danger', id: call.id, name: call.name, verdict };
+            } else if (verdict.decision === 'confirm') {
+              yield { kind: 'tool.danger', id: call.id, name: call.name, verdict };
+              const decision = this.confirmDanger
+                ? await this.confirmDanger({
+                    verdict,
+                    toolName: skill.frontmatter.name,
+                    args: parsedArgs,
+                  })
+                : { decision: 'deny' as const };
+              if (decision.decision === 'deny') {
+                allowed = false;
+                output = `[denied by user] ${verdict.headline}`;
+                error = true;
+                blocked = true;
+              } else {
+                if (decision.decision === 'allow-and-preapprove') {
+                  for (const id of decision.ruleIds) {
+                    this.classAPreapprovals[id] = true;
+                  }
+                }
+                this.bus.publish({
+                  actor: this.humanActor,
+                  kind: 'tool.call',
+                  payload: {
+                    id: call.id,
+                    name: call.name,
+                    approval: 'human-approved',
+                    preapproved: decision.decision === 'allow-and-preapprove' ? decision.ruleIds : undefined,
+                  },
+                });
+              }
+            }
           }
-          try {
-            const result = await skill.handler(parsedArgs, {
-              sessionId: this.id,
-              cwd: this.cwd,
-              signal,
-            });
-            output = result.output;
-            error = result.error;
-          } catch (e) {
-            output = `skill threw: ${(e as Error).message}`;
-            error = true;
+
+          if (allowed) {
+            try {
+              const result = await skill.handler(parsedArgs, {
+                sessionId: this.id,
+                cwd: this.cwd,
+                signal,
+              });
+              output = result.output;
+              error = result.error;
+            } catch (e) {
+              output = `skill threw: ${(e as Error).message}`;
+              error = true;
+            }
+          } else {
+            output ??= '[blocked]';
           }
         }
-        this.appendToolResult(call.id, output);
+
+        this.appendToolResult(call.id, output!);
         this.bus.publish({
           actor: { kind: 'system', subsystem: 'skill-runtime' },
           kind: 'tool.result',
-          payload: { id: call.id, name: call.name, output, error },
+          payload: { id: call.id, name: call.name, output: output!, error, blocked },
         });
-        yield { kind: 'tool.result', id: call.id, name: call.name, output, error };
+        yield {
+          kind: 'tool.result',
+          id: call.id,
+          name: call.name,
+          output: output!,
+          error,
+          blocked,
+        };
       }
-      // loop: ask the model again with tool results appended.
     }
   }
 

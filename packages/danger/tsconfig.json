@@ -5,10 +5,5 @@
     "rootDir": "./src",
     "composite": true
   },
-  "include": ["src/**/*"],
-  "references": [
-    { "path": "../provider" },
-    { "path": "../skills" },
-    { "path": "../danger" }
-  ]
+  "include": ["src/**/*"]
 }

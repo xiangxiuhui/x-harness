@@ -23,6 +23,9 @@ importers:
       '@x_harness/core':
         specifier: workspace:*
         version: link:../core
+      '@x_harness/danger':
+        specifier: workspace:*
+        version: link:../danger
       '@x_harness/provider':
         specifier: workspace:*
         version: link:../provider
@@ -32,12 +35,17 @@ importers:
 
   packages/core:
     dependencies:
+      '@x_harness/danger':
+        specifier: workspace:*
+        version: link:../danger
       '@x_harness/provider':
         specifier: workspace:*
         version: link:../provider
       '@x_harness/skills':
         specifier: workspace:*
         version: link:../skills
+
+  packages/danger: {}
 
   packages/memory: {}
 

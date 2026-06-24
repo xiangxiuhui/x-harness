@@ -1,5 +1,5 @@
 {
-  "name": "@x_harness/core",
+  "name": "@x_harness/danger",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -9,10 +9,5 @@
   },
   "scripts": {
     "build": "tsc -b"
-  },
-  "dependencies": {
-    "@x_harness/provider": "workspace:*",
-    "@x_harness/skills": "workspace:*",
-    "@x_harness/danger": "workspace:*"
   }
 }

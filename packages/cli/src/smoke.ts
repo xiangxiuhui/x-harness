@@ -61,6 +61,11 @@ async function main(): Promise<number> {
           `\x1b[90m  ← tool:${ev.name}${ev.error ? ' (error)' : ''}\x1b[0m\n`,
         );
         break;
+      case 'tool.danger':
+        process.stdout.write(
+          `\x1b[1;31m  ⚠ danger:${ev.name}\x1b[0m ${ev.verdict.decision}\n`,
+        );
+        break;
       case 'turn.done':
         break;
     }

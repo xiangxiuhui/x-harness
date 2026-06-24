@@ -1,8 +1,16 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import * as readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { Session, actorBadge } from '@x_harness/core';
+import {
+  Session,
+  actorBadge,
+  type ConfirmDangerHandler,
+  type DangerConfirmation,
+} from '@x_harness/core';
 import { createDeepSeekProviderFromEnv } from '@x_harness/provider';
 import { buildSkillRegistry } from '@x_harness/skills';
+import { DangerEngine, defaultDangerContext } from '@x_harness/danger';
 import { findRepoRoot } from './repo.js';
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -16,22 +24,41 @@ const EXIT_WORDS = new Set([
   '/exit', '/quit', '/q', ':q', ':quit', 'exit', 'quit', 'bye', 'q',
 ]);
 
-const ACTOR_SYSTEM = (text: string) => `\x1b[90m${text}\x1b[0m`;
-const TOOL_HEAD = '\x1b[33m';
-const TOOL_RES = '\x1b[32m';
 const RESET = '\x1b[0m';
+const DIM = '\x1b[90m';
+const YELLOW = '\x1b[33m';
+const GREEN = '\x1b[32m';
+const RED = '\x1b[31m';
+const BOLD_RED = '\x1b[1;31m';
 
 export async function runChat(_args: string[]): Promise<number> {
   let provider;
   try {
     provider = createDeepSeekProviderFromEnv();
   } catch (e) {
-    stdout.write(`\x1b[31m${(e as Error).message}\x1b[0m\n`);
+    stdout.write(`${RED}${(e as Error).message}${RESET}\n`);
     return 1;
   }
 
   const repoRoot = findRepoRoot(process.cwd());
   const registry = buildSkillRegistry({ repoRoot });
+
+  const xHarnessHome = process.env.X_HARNESS_HOME ?? join(homedir(), '.x_harness');
+  const dangerEngine = new DangerEngine();
+  const dangerContext = defaultDangerContext({
+    xHarnessHome,
+    repoRoot,
+    selfPids: [process.pid, process.ppid].filter((n) => n > 0),
+    recoverSkillNames: registry
+      .list()
+      .map((s) => s.frontmatter.name)
+      .filter((n) => n.startsWith('recover.')),
+  });
+
+  const rl = readline.createInterface({ input: stdin, output: stdout });
+
+  const confirmDanger: ConfirmDangerHandler = async ({ verdict, toolName, args }) =>
+    promptConfirm(rl, verdict, toolName, args);
 
   const session = new Session({
     provider,
@@ -40,6 +67,9 @@ export async function runChat(_args: string[]): Promise<number> {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     skills: registry,
     cwd: process.cwd(),
+    dangerEngine,
+    dangerContext,
+    confirmDanger,
   });
 
   const skillNames = registry.executable().map((s) => s.frontmatter.name);
@@ -47,10 +77,10 @@ export async function runChat(_args: string[]): Promise<number> {
     `\n${actorBadge(session.humanActor)} ↔ ${actorBadge(session.modelActor)}\n` +
       `(session ${session.id})\n` +
       `(skills: ${skillNames.join(', ') || '<none>'})\n` +
-      `(commands: exit | bye | /skills | /help    keys: Ctrl+C aborts reply, Ctrl+D exits)\n\n`,
+      `(guard: ADR-0005, home=${xHarnessHome})\n` +
+      `(commands: exit | /skills | /help    keys: Ctrl+C aborts reply, Ctrl+D exits)\n\n`,
   );
 
-  const rl = readline.createInterface({ input: stdin, output: stdout });
   let inFlight: AbortController | null = null;
   let closedByEof = false;
   rl.on('close', () => {
@@ -115,14 +145,23 @@ export async function runChat(_args: string[]): Promise<number> {
             break;
           case 'tool.call':
             stdout.write(
-              ACTOR_SYSTEM(
-                `\n  ${TOOL_HEAD}→ tool:${ev.name}${RESET}  ${truncate(ev.argumentsJson, 200)}\n`,
-              ),
+              `${DIM}  ${YELLOW}→ tool:${ev.name}${RESET}${DIM}  ${truncate(ev.argumentsJson, 200)}${RESET}\n`,
             );
             break;
+          case 'tool.danger':
+            // Just a notice; the prompt itself happens in confirmDanger handler.
+            // For 'block', no confirmation is asked; show banner.
+            if (ev.verdict.decision === 'block') {
+              stdout.write(`${BOLD_RED}  ⛔ blocked${RESET} ${ev.verdict.reason}\n`);
+            }
+            break;
           case 'tool.result': {
-            const head = ev.error ? `${TOOL_HEAD}← tool:${ev.name} (error)${RESET}` : `${TOOL_RES}← tool:${ev.name}${RESET}`;
-            stdout.write(ACTOR_SYSTEM(`  ${head}\n`));
+            const head = ev.blocked
+              ? `${BOLD_RED}← tool:${ev.name} (blocked)${RESET}`
+              : ev.error
+                ? `${YELLOW}← tool:${ev.name} (error)${RESET}`
+                : `${GREEN}← tool:${ev.name}${RESET}`;
+            stdout.write(`${DIM}  ${head}${RESET}\n`);
             stdout.write(indent(truncate(ev.output, 1200), '    ') + '\n');
             break;
           }
@@ -133,9 +172,9 @@ export async function runChat(_args: string[]): Promise<number> {
       }
     } catch (e) {
       if (inFlight.signal.aborted) {
-        stdout.write('\n\x1b[33m[aborted]\x1b[0m\n\n');
+        stdout.write(`\n${YELLOW}[aborted]${RESET}\n\n`);
       } else {
-        stdout.write(`\n\x1b[31m[error] ${(e as Error).message}\x1b[0m\n\n`);
+        stdout.write(`\n${RED}[error] ${(e as Error).message}${RESET}\n\n`);
       }
     } finally {
       inFlight = null;
@@ -147,14 +186,52 @@ export async function runChat(_args: string[]): Promise<number> {
   return 0;
 }
 
+async function promptConfirm(
+  rl: readline.Interface,
+  verdict: Extract<
+    Awaited<ReturnType<DangerEngine['evaluate']>>,
+    { decision: 'confirm' }
+  >,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<DangerConfirmation> {
+  stdout.write(`\n${BOLD_RED}⚠  Danger guard${RESET} ${YELLOW}${verdict.headline}${RESET}\n`);
+  stdout.write(`${DIM}    tool: ${toolName}\n    args: ${truncate(JSON.stringify(args), 240)}${RESET}\n`);
+  for (const line of verdict.explanation) {
+    stdout.write(`    ${YELLOW}•${RESET} ${line}\n`);
+  }
+  if (verdict.recoveryHints) {
+    for (const h of verdict.recoveryHints) {
+      stdout.write(`    ${DIM}↻ ${h}${RESET}\n`);
+    }
+  }
+  const classAIds = verdict.hits.filter((h) => h.class === 'A').map((h) => h.ruleId);
+  const promptText =
+    classAIds.length > 0
+      ? `Allow this action? [y]es / [N]o / [a]llow & pre-approve (${classAIds.join(',')}) : `
+      : `Allow this action? [y]es / [N]o : `;
+
+  let answer = '';
+  try {
+    answer = (await rl.question(promptText)).trim().toLowerCase();
+  } catch {
+    return { decision: 'deny' };
+  }
+  if (answer === 'y' || answer === 'yes') return { decision: 'allow' };
+  if (answer === 'a' || answer === 'all' || answer === 'allow') {
+    if (classAIds.length > 0) {
+      return { decision: 'allow-and-preapprove', ruleIds: classAIds };
+    }
+    return { decision: 'allow' };
+  }
+  return { decision: 'deny' };
+}
+
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max) + `… (+${s.length - max} chars)`;
 }
 
 function indent(s: string, prefix: string): string {
-  return s
-    .split('\n')
-    .map((l) => prefix + l)
-    .join('\n');
+  return s.split('\n').map((l) => prefix + l).join('\n');
 }
