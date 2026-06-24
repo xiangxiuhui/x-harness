@@ -46,26 +46,27 @@ x_harness/
     └── x_kernel/            # 系统级 IO、危险操作守卫、actor 标签写入 OS
 ```
 
-## 第一螺旋（macOS）目标
+## 第一螺旋（macOS）目标 — ✅ Close (2026-06-24, `043cf3d`)
 
 - [x] CLI 跑通（`x chat` 流式对话）
-- [ ] UI 入口（最小）跑通
 - [x] 1 个 model API 打通对话回路（DeepSeek, ADR 0003）
-- [ ] Skills 运行时 v0（ADR 0006）
-- [ ] 记忆 / 知识管理 v0
-- [ ] 自学习进化 v0（仅采集 + UI 标注回路）
-- [ ] 危险操作拦截（ADR 0005：Class A / Class B）
+- [x] Skills 运行时 v0（ADR 0006；4 个 builtin: shell.run / file.read / file.write / web.fetch）
+- [x] 记忆 v0（JSONL append log + `x sessions ls/show` + `x chat --resume`）
+- [x] 危险操作拦截（ADR 0005：Class A / Class B，14 case 测试通过）
+- [ ] UI 入口、自学习进化采集 → **推迟到螺旋 2**
 
-详见 `docs/roadmap.md`。
+详细的代码 vs ADR 现状一页：[`docs/status.md`](docs/status.md)
+螺旋 2 计划：[`docs/roadmap.md#螺旋-2`](docs/roadmap.md)
 
 ## 快速起步
 
 ```bash
 pnpm install
-cp .env.example .env   # 填 DEEPSEEK_API_KEY
-pnpm x chat            # 交互式对话
-# 或单轮烟雾测试：
-pnpm tsx packages/cli/src/smoke.ts "hello"
+cp .env.example .env       # 填 DEEPSEEK_API_KEY
+pnpm x chat                # 交互式对话
+pnpm x sessions ls         # 看历史会话
+pnpm x sessions show <id>  # 查某次会话的审计流水
+pnpm x chat --resume <id>  # 接着上次聊
 ```
 
 ## 参考项目（git submodule）

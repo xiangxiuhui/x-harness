@@ -100,9 +100,19 @@ Actor 总线 → audit log → memory 索引器 →
 - Rust：actor tag 写入 + 危险操作 guard
 - 通信：先全用 NAPI-RS，guard daemon 推迟到螺旋 2
 
+> **实际螺旋 1 落地差异**（2026-06-24）：UI 推迟到螺旋 2，先以 CLI 闭环；
+> Rust kernel 推迟到螺旋 2，guard 用纯 TS（`@x_harness/danger`）实现；
+> memory 用单一 JSONL append log 形态，三类分组（事实/偏好/禁忌）从 JSONL 派生，
+> 本身推迟到螺旋 2。详见 `docs/status.md`。
+
 ## 8. 后续 ADR 索引
 
-- `docs/decisions/0001-ts-rust-bridge.md`（待写）
-- `docs/decisions/0002-actor-tag-macos.md`（待写）
-- `docs/decisions/0003-first-provider.md`（待写）
-- `docs/decisions/0004-ui-form-factor-mvp.md`（待写）
+- `docs/decisions/0001-ts-rust-bridge.md` ✅
+- `docs/decisions/0002-actor-tag-macos.md` ✅
+- `docs/decisions/0003-first-provider.md` ✅
+- `docs/decisions/0004-ui-form-factor-mvp.md` ✅
+- `docs/decisions/0005-danger-rules.md` ✅
+- `docs/decisions/0006-skill-plugin-form.md` ✅
+- `docs/decisions/0007-skill-runtime-form.md`（spiral 2 待写）
+- `docs/decisions/0008-ui-core-protocol.md`（spiral 2 待写）
+- `docs/decisions/0009-evolution-schema.md`（spiral 2 待写）

@@ -88,6 +88,11 @@ x_harness 的 UI 形态会非常多元（CLI / 浏览器插件 / System Super Ap
 - **第二螺旋**：Linux 原生 + Windows native 编译通过。
 - **第三螺旋**：跨 OS 一致的 actor / 审计 / 危险操作守卫。
 
+> **当前状态**（2026-06-24, spiral 1 close）：
+> macOS 端到端可用（CLI 形态）；actor 在应用层已经是一等公民（事件总线 + memory entry 都带 actor），
+> 但**还没下沉到 OS 级 xattr**（spiral 2 起步项）。Linux/Windows 没验证。
+> 实际进度详见 `docs/status.md`。
+
 ## 8. 反目标 / 红线
 
 - 不为讨好某家模型而牺牲架构清晰度。

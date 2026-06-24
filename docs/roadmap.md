@@ -5,104 +5,124 @@
 2. **最新** —— 用最新的 model / 工具链
 3. **可使用闭环** —— 自己能在日常工作里用起来
 
+> 当前状态：**螺旋 1 已 close**（2026-06-24, commit `043cf3d`）。
+> 详细的"代码 vs ADR"现状见 [`docs/status.md`](status.md)。
+
 ---
 
-## 螺旋 0：对齐与铺路（当前）
+## 螺旋 0：对齐与铺路 ✅
 
-- [x] 4 个参考项目可达性确认
+- [x] 4 个参考项目可达性确认 + git submodule 接入
 - [x] 仓库骨架
-- [x] vision / roadmap / architecture 文档
-- [ ] git submodule 接入参考项目
-- [ ] 决定第一螺旋使用的 model provider（**待定**）
-- [ ] 决定 actor 标签的 macOS 落地方案（xattr `com.x_harness.actor` 是当前候选）
-
-**交付物**：能在 `docs/` 里展开后续讨论的一份对齐文档集。
+- [x] vision / roadmap / architecture / comparison 4 篇
+- [x] ADR 0001-0006 全部落地
 
 ---
 
-## 螺旋 1：macOS 端到端最小闭环（MVP-α）
+## 螺旋 1：macOS 端到端最小闭环（MVP-α） ✅
 
-> 目标：从 CLI 或 UI 发一条任务，model 调用 1-2 个工具完成，UI 上看到中间产物，人类能改，改完进入"进化原料"。
+> 目标：从 CLI 发一条任务，model 调用工具完成，审计可看，危险操作能拦。
 
-### 1.1 CLI（packages/cli）
-- `x` 命令：`x chat`、`x run <task>`、`x ui`
-- 标准输入/输出绑定 `actor=human`
-- 每条命令落 audit log
+| # | 子任务 | 状态 | 备注 |
+|---|--------|------|------|
+| 1.1 | CLI (`x chat`, `x sessions ls/show`, `x chat --resume`) | ✅ | UI 推迟到螺旋 2 |
+| 1.2 | UI（本地 web） | ❌ → 螺旋 2 | spiral 1 改用 CLI 闭环换速度 |
+| 1.3 | Provider 抽象 + DeepSeek | ✅ | ADR 0003 |
+| 1.4 | Skills 运行时 v0 + 4 builtin | ✅ | ADR 0006，on-disk skill 加载但不可执行 |
+| 1.5 | Memory v0 | ✅ → 形态调整为 JSONL append log | 三类（事实/偏好/禁忌）推迟到螺旋 2，先把"看得见的审计流水"做透 |
+| 1.6 | 自学习进化采集 | ❌ → 螺旋 2 | 审计原料已经持续产出 |
+| 1.7 | Rust 内核 | ❌ → 螺旋 2 | 用纯 TS 实现了 guard（ADR-0005 落地在 `@x_harness/danger`），换交付速度 |
+| 1.8 | 验收 | 🟡 | 端到端可以跑；UI 部分待螺旋 2 补齐 |
 
-### 1.2 UI（packages/ui）
-- 形态：本地 web（Vite + React + TS），**按"将来包 Tauri"的约束设计**，详见 [ADR 0004](decisions/0004-ui-form-factor-mvp.md)
-- 视图：会话流 + 当前交付物 + 中间产物
-- 协作：消息输入 + 行级标注 + "确认/拒绝危险操作"
-- **每条消息/动作必带 actor 徽标**（系统级标签的可视化，详见 [ADR 0002](decisions/0002-actor-tag-macos.md)）
+### 与最初计划的偏差与理由
 
-### 1.3 Provider（packages/provider）
-- 抽象 `Provider` interface（不过度设计，够用即可）
-- 第一个实现：**DeepSeek**（OpenAI-compatible，详见 [ADR 0003](decisions/0003-first-provider.md)）
-
-### 1.4 Skills 运行时 v0（packages/skills）
-- Skill 形态参考 claude-code（前置 frontmatter + body）
-- 第一螺旋 built-in skills：
-  - `shell.run`（受 kernel 危险守卫保护）
-  - `file.read` / `file.write` / `file.edit`
-  - `web.fetch`
-- 用户/项目级 skill 目录扫描
-
-### 1.5 记忆 / 知识 v0（packages/memory）
-- 三层存储：
-  - **事实**（key-value）
-  - **偏好**（带 actor 来源、置信度）
-  - **禁忌**（人类显式说"别这么做"）
-- 检索：先纯关键词 + 简单 embedding（够 MVP）
-- 所有 memory 项必须带 actor 来源
-
-### 1.6 自学习进化 v0（在 memory 里实装）
-- 仅做"采集 + 视图 + 接受/拒绝按钮"
-- 不做自动训练；进化产物是结构化提示片段 / skill 草稿
-
-### 1.7 Rust 内核（crates/x_kernel）
-- v0 只做两件事：
-  1. **Actor 标签写入**：进程启动时打 actor 标签；写文件时设置 xattr
-  2. **危险操作守卫**：rm -rf / sudo / 写系统目录 / 网络写 → 弹确认（通过 IPC 通知 TS 外壳）
-- TS↔Rust 通过 NAPI-RS 或 stdin/stdout JSON-RPC（架构文档里定）
-
-### 1.8 验收
-- 自己用 x_harness 完成一次"读取本地某项目 README → 总结 → 写到 ~/Desktop/summary.md"任务
-- audit log 完整、actor 区分正确
-- 一次危险操作（如 `rm` 测试目录）触发确认
+| 偏差 | 理由 |
+|------|------|
+| guard 写在 TS 不在 Rust | spiral 1 优先"能跑"；引擎是纯函数，移到 Rust 是 1:1 翻译 |
+| memory 是 JSONL 不是三类（事实/偏好/禁忌） | spiral 1 优先"全量审计"；分类是从 JSONL 派生的工作，spiral 2 起步 |
+| UI 没做 | 命令行先把 actor / danger / memory 跑通；UI 进入螺旋 2 后**已有充足契约可对接** |
+| Rust 内核没动 | spiral 1 全栈 TS 让端到端短到 1 周；Rust 进入螺旋 2 时已经有清晰的接口边界 |
 
 ---
 
-## 螺旋 2：跨 OS + 多入口 + MCP
+## 螺旋 2：actor 落 OS + UI + 进化采集（**当前**）
 
-- Linux 原生跑通
-- 浏览器插件入口（看作另一个 UI，仍只做"视图+协作"）
-- 麦克风入口（语音 → 文本 → core）
-- 引入 MCP client（接管"网络触达的工具环境"）
-- 多 provider
+> 目标：让 actor 标签变成系统级**硬约束**；让审计流水**人类看得到**；开始**收集进化原料**。
 
-## 螺旋 3：Windows + 远程触达
+### 2.1 Rust 内核首块石头（crates/x_kernel）
+- **actor xattr 读写**：macOS `setxattr/getxattr`，标签 `com.x_harness.actor`
+- **shell.run 改走 kernel**：TS 仍是入口，但 spawn 前请 Rust 打标签
+- 通信：NAPI-RS（先单一 ABI，预编译产物到 GitHub Release）
+- 不动 guard：guard 继续是 TS 的纯函数（spiral 3 再翻译）
 
-- Windows native
-- 远程 x_harness 节点（同一 actor 体系跨主机一致）
-- 任务可在远端执行、本地视图
+### 2.2 本地 Web UI（packages/ui）— ADR-0004 兑现
+- 形态：Vite + React + TS；同时把"将来包 Tauri"的约束写在 README
+- 三屏：
+  1. **会话流**（同 cli，加 actor 徽标）
+  2. **审计回放**（按 sessionId 拉 JSONL → 时间线）
+  3. **待复盘**（spiral 2 新增）
+- UI ↔ core：SSE 推流 + REST 查询；MemorySink 实现一个 SSE 版本
 
-## 螺旋 N：进化闭环加深
+### 2.3 进化采集 v0 — vision §6 兑现
+- 每条 model action 上加"接受 / 这步不对 / 我会这样做"3 按钮
+- 收集为 `~/.x_harness/evolution/<sessionId>.jsonl`，schema：
+  ```jsonc
+  { ts, sessionId, target: { kind: 'tool.call' | 'assistant.message', seq, ... },
+    correction: { decision: 'accept' | 'reject-with-note' | 'rewrite', note?: string, my_version?: string } }
+  ```
+- 不做"自动转化为 skill 草稿"；只采集 + 在 UI 上人类回顾
+- 进化产物的转化推迟到螺旋 3
 
-- 半自动 skill 生成
-- 个性化 prompt 自动注入
-- 行为偏好的多人多终端同步（家庭/团队场景）
+### 2.4 On-disk skill 可执行 — ADR-0006 兑现
+- 决脚本运行时（ADR-0007 待写）
+- 候选：
+  - **A. Node child_process spawn js/ts** — 零新依赖
+  - **B. Deno embed** — 沙箱原生
+  - **C. Bun** — 速度
+- 倾向 A（与"TS 外壳"路线一致），但要先回答"如何隔离恶意 skill"
+
+### 2.5 跨会话 memory 检索 v0
+- `x memory grep <regex>`：扫所有 JSONL；够第一版用
+- 加 simple BM25 索引到 `~/.x_harness/memory/index/` 是 spiral 3 起步
+
+### 2.6 验收标准（自检）
+- 跑一次 `x chat`，文件创建时能用 `xattr com.x_harness.actor <file>` 读到 `model:deepseek:...`
+- 同一会话同时开 cli + 浏览器 UI，两边看到完全一致的事件流（多 UI 一致性 §4）
+- UI 上点"这步不对"能写出一条 evolution 记录
+- 装一个 user-level skill (`~/.x_harness/skills/my-thing/`) 能被模型实际调用
+
+---
+
+## 螺旋 3：跨 OS + MCP + 进化产物转化
+
+- Linux 原生跑通 + Windows native 编译通过
+- MCP client（接管"网络触达的工具环境"）
+- danger guard 翻译到 Rust（spiral 2 仍是 TS）
+- evolution 采集物 → skill 草稿（半自动）
+- 第二家 provider（Anthropic / 本地 ollama）
+
+---
+
+## 螺旋 4+：多入口 + 远程节点 + 进化闭环加深
+
+- 浏览器插件 / 麦克风入口
+- 远程 x_harness 节点（actor 跨主机一致）
+- 行为偏好多人多终端同步
+- 任务调度器（用户睡觉时跑长任务）
 
 ---
 
 ## 关键决策（已落 ADR）
 
-- ✅ 第一螺旋 model：**DeepSeek**（[ADR 0003](decisions/0003-first-provider.md)）
-- ✅ UI 形态：**本地 Web（Vite+React），按"将来包 Tauri"约束设计**（[ADR 0004](decisions/0004-ui-form-factor-mvp.md)）
-- ✅ macOS Actor 标签：**xattr `com.x_harness.actor.*`，预留 ES 升级路径**（[ADR 0002](decisions/0002-actor-tag-macos.md)）
-- ✅ 危险操作规则集：**Class A 人类账号 / Class B 自存续；其他全放行**（[ADR 0005](decisions/0005-danger-rules.md)）
+- ✅ TS+Rust 分层 — [ADR 0001](decisions/0001-ts-rust-bridge.md)
+- ✅ macOS actor 标签：xattr — [ADR 0002](decisions/0002-actor-tag-macos.md)
+- ✅ 第一螺旋 model：DeepSeek — [ADR 0003](decisions/0003-first-provider.md)
+- ✅ UI 形态：本地 Web，"将来包 Tauri" 约束 — [ADR 0004](decisions/0004-ui-form-factor-mvp.md)
+- ✅ 危险规则集：Class A 人类账号 / Class B 自存续 — [ADR 0005](decisions/0005-danger-rules.md)
+- ✅ Skill 五件套 + claude-code 兼容 — [ADR 0006](decisions/0006-skill-plugin-form.md)
 
-## 仍待对齐（不阻塞螺旋 1 启动）
+## 螺旋 2 待写 ADR
 
-- [ ] DeepSeek 流式协议在弱网下的重试参数（边跑边调）
-- [ ] memory 的 embedding 是否第一螺旋就接（候选：先纯关键词，第二螺旋上 embedding）
-- [ ] ADR 0006 Skill / Plugin 形态对齐 claude-code 五件套（编码开始前补一份）
+- [ ] **ADR 0007 — Skill 脚本运行时形态**（决 A/B/C 三个候选）
+- [ ] **ADR 0008 — UI ↔ Core 协议**（SSE topic 设计 + REST endpoint 列表）
+- [ ] **ADR 0009 — Evolution 采集 schema 与边界**（采集什么、不采集什么、何时升级为 skill 草稿）
