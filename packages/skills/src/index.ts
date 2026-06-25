@@ -17,3 +17,4 @@ export * from './frontmatter.js';
 export * from './loader.js';
 export * from './builtin/index.js';
 export * from './registry.js';
+export * from './runtime/exec-on-disk.js';

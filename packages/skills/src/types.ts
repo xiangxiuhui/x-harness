@@ -6,6 +6,9 @@ export type DangerClass = 'none' | 'A' | 'B' | 'both';
 /** ADR 0006 — actor that can invoke a skill. */
 export type SkillActorRequirement = 'model' | 'human' | 'any';
 
+/** ADR 0007 — script runtime for on-disk skills. */
+export type SkillRuntime = 'node-ts' | 'node-js' | 'sh' | 'python' | 'auto';
+
 /** Frontmatter of SKILL.md (typed view; loose fields are passed through). */
 export interface SkillFrontmatter {
   name: string;
@@ -24,6 +27,12 @@ export interface SkillFrontmatter {
       side_effects?: string[];
       tags?: string[];
       related_skills?: string[];
+      /** ADR-0007 — on-disk skill runtime. */
+      runtime?: SkillRuntime;
+      /** Relative path to the handler script. Default: handler.<ext> auto-detect. */
+      entrypoint?: string;
+      /** Max wall-clock for one call (ms). Default: 60000. Hard cap: 5min. */
+      timeout_ms?: number;
     };
     /** other namespaces (claude-code, hermes, ...) pass through. */
     [ns: string]: unknown;

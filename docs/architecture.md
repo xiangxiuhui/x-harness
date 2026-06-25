@@ -113,6 +113,6 @@ Actor 总线 → audit log → memory 索引器 →
 - `docs/decisions/0004-ui-form-factor-mvp.md` ✅
 - `docs/decisions/0005-danger-rules.md` ✅
 - `docs/decisions/0006-skill-plugin-form.md` ✅
-- `docs/decisions/0007-skill-runtime-form.md`（spiral 2 待写）
+- `docs/decisions/0007-skill-runtime-form.md`（Accepted, spiral 2.1 已实现）
 - `docs/decisions/0008-ui-core-protocol.md`（spiral 2 待写）
 - `docs/decisions/0009-evolution-schema.md`（spiral 2 待写）

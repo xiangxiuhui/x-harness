@@ -49,21 +49,35 @@
 
 > 目标：让 actor 标签变成系统级**硬约束**；让审计流水**人类看得到**；开始**收集进化原料**。
 
-### 2.1 Rust 内核首块石头（crates/x_kernel）
+### 2.1 On-disk skill 可执行 — ADR-0006/0007 兑现 ✅
+- ADR-0007 已 Accepted；选了方案 A（Node child_process spawn）
+- `packages/skills/src/runtime/exec-on-disk.ts`：按扩展名分发（`.ts/.mts → node --import tsx`；`.js/.mjs → node`；`.sh → /bin/sh`；`.py → python3`）
+- frontmatter 新字段：`metadata.x_harness.{runtime, entrypoint, timeout_ms}`
+- 协议：stdin `{args, context}` JSON → stdout 最后一行 JSON `{output, error?, meta?}`；其余 stdout 仅入 `meta.chatter`、stderr 入 `meta.stderr`，**不进 model context**
+- 进程组隔离（`detached: true` + `process.kill(-pid)`），timeout / abort 都能收掉 grand-child
+- env 注入：`X_HARNESS_ACTOR=skill:<name>` + `X_HARNESS_SKILL_DIR` + `X_HARNESS_SESSION_ID`（spiral 2.2 Rust kernel 用）
+- 测试：`packages/skills/test/exec-on-disk.test.ts`，6 case 全通过（greet-ts / noisy-sh / broken-no-json / no-handler-script / sleepy timeout / whoami env）
+- Demo：`examples/skills/greet/`
+
+> **这一步给后续多出一个观察面**：在 2.2 / 2.3 里，无论是 Rust kernel 读 actor xattr，还是 UI 在审计流上看 tool.call，都能看到 `actor=skill:<name>` 这条"非内置"的执行路径——on-disk skill 不再是文档里画的"未来"，而是已经在跑的真实 actor 类别。
+
+### 2.2 Rust 内核首块石头（crates/x_kernel）
 - **actor xattr 读写**：macOS `setxattr/getxattr`，标签 `com.x_harness.actor`
 - **shell.run 改走 kernel**：TS 仍是入口，但 spawn 前请 Rust 打标签
 - 通信：NAPI-RS（先单一 ABI，预编译产物到 GitHub Release）
 - 不动 guard：guard 继续是 TS 的纯函数（spiral 3 再翻译）
+- **观察面增益**：on-disk skill 进程已经在 env 里挂了 `X_HARNESS_ACTOR=skill:<name>`，Rust kernel 上来直接读这个变量就能把 skill 调用的副作用也打上 xattr，而不只是 model 直发的 shell.run。
 
-### 2.2 本地 Web UI（packages/ui）— ADR-0004 兑现
+### 2.3 本地 Web UI（packages/ui）— ADR-0004 兑现
 - 形态：Vite + React + TS；同时把"将来包 Tauri"的约束写在 README
 - 三屏：
   1. **会话流**（同 cli，加 actor 徽标）
   2. **审计回放**（按 sessionId 拉 JSONL → 时间线）
   3. **待复盘**（spiral 2 新增）
 - UI ↔ core：SSE 推流 + REST 查询；MemorySink 实现一个 SSE 版本
+- **观察面增益**：UI 上 actor 徽标的色块由 2.2 的 xattr 反查得到——文件视角和会话视角能对得上。
 
-### 2.3 进化采集 v0 — vision §6 兑现
+### 2.4 进化采集 v0 — vision §6 兑现
 - 每条 model action 上加"接受 / 这步不对 / 我会这样做"3 按钮
 - 收集为 `~/.x_harness/evolution/<sessionId>.jsonl`，schema：
   ```jsonc
@@ -73,23 +87,15 @@
 - 不做"自动转化为 skill 草稿"；只采集 + 在 UI 上人类回顾
 - 进化产物的转化推迟到螺旋 3
 
-### 2.4 On-disk skill 可执行 — ADR-0006 兑现
-- 决脚本运行时（ADR-0007 待写）
-- 候选：
-  - **A. Node child_process spawn js/ts** — 零新依赖
-  - **B. Deno embed** — 沙箱原生
-  - **C. Bun** — 速度
-- 倾向 A（与"TS 外壳"路线一致），但要先回答"如何隔离恶意 skill"
-
 ### 2.5 跨会话 memory 检索 v0
 - `x memory grep <regex>`：扫所有 JSONL；够第一版用
 - 加 simple BM25 索引到 `~/.x_harness/memory/index/` 是 spiral 3 起步
 
 ### 2.6 验收标准（自检）
+- ~~装一个 user-level skill (`~/.x_harness/skills/my-thing/`) 能被模型实际调用~~ ✅ (2.1 done)
 - 跑一次 `x chat`，文件创建时能用 `xattr com.x_harness.actor <file>` 读到 `model:deepseek:...`
 - 同一会话同时开 cli + 浏览器 UI，两边看到完全一致的事件流（多 UI 一致性 §4）
 - UI 上点"这步不对"能写出一条 evolution 记录
-- 装一个 user-level skill (`~/.x_harness/skills/my-thing/`) 能被模型实际调用
 
 ---
 

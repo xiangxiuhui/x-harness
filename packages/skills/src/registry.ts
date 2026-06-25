@@ -2,6 +2,7 @@ import type { ToolSpec } from '@x_harness/provider';
 import { BUILTIN_SKILLS } from './builtin/index.js';
 import { loadAllSkillFiles, defaultSkillSources, type SkillSources } from './loader.js';
 import { normalizeToolName, skillToToolSpec, type Skill } from './types.js';
+import { withOnDiskHandler } from './runtime/exec-on-disk.js';
 
 /**
  * SkillRegistry — the runtime collection of skills for a session.
@@ -69,9 +70,10 @@ export function buildSkillRegistry(opts: BuildRegistryOptions = {}): SkillRegist
     projectDir: opts.projectDir ?? defaultSkillSources(opts.repoRoot).projectDir,
   };
   for (const parsed of loadAllSkillFiles(sources)) {
-    // On-disk skills override builtins by name; but they have no handler in
-    // spiral 1, so they're displayed-only.
-    reg.add({ ...parsed });
+    // On-disk skills can declare a runtime (ADR-0007) and get an executable
+    // handler via the wrapper. If no script is present, the skill stays
+    // displayed-only.
+    reg.add(withOnDiskHandler(parsed));
   }
   return reg;
 }

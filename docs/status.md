@@ -2,7 +2,7 @@
 
 > 这一页是给"上下文压缩后的未来 self"看的：当前 repo 里**实际有什么**，对应 vision 和 ADR 里的**哪一条**，**哪些没有**。
 
-更新时间：2026-06-24（spiral 1 close, commit `043cf3d`）。
+更新时间：2026-06-25（spiral 2.1 done — on-disk skill runtime 已落地）。
 
 ---
 
@@ -11,7 +11,7 @@
 ```
 packages/
 ├── provider/   DeepSeek (OpenAI-compatible SSE) — ADR-0003
-├── skills/     v0 loader + 4 builtin + frontmatter parser — ADR-0006
+├── skills/     v0 loader + 4 builtin + frontmatter parser + **on-disk runtime** — ADR-0006/0007
 ├── danger/     pure rule engine v0 (3 Class-A + 5 Class-B) — ADR-0005
 ├── memory/     JSONL append log + replay + index — ADR-0002
 ├── core/       Session w/ tool-loop + actor bus + memory sink hook
@@ -47,7 +47,8 @@ crates/
 | 0003 first provider | DeepSeek | ✅ 完全兑现 | provider 抽象抽得很薄，加第二家成本低 |
 | 0004 UI 形态 | 本地 Web + 将来包 Tauri | ❌ **UI 一行没写**（CLI 在跑） | spiral 2 启动项之一 |
 | 0005 危险规则集 | Class A + Class B + recover 抵消 | ✅ 14 case 测试通过 | 仍只覆盖 macOS 路径模式；shell 解析不展开 $VARS |
-| 0006 Skill 五件套 | claude-code 兼容 frontmatter | ✅ builtin 完全 / on-disk skill 加载不可执行 | spiral 2 决脚本运行时（deno？bun？node-vm？） |
+| 0006 Skill 五件套 | claude-code 兼容 frontmatter | ✅ builtin + **on-disk 可执行** (ADR-0007) | 脚本运行时已落地 |
+| 0007 Skill 脚本运行时 | Node spawn + JSON-over-stdio | ✅ 实现完成 (`packages/skills/src/runtime/exec-on-disk.ts`) | 6 case 测试通过；demo 在 `examples/skills/greet/` |
 
 ## 4. vision.md 中**已兑现** vs **未兑现**
 

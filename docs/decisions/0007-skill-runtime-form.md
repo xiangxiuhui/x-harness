@@ -1,8 +1,9 @@
 # ADR 0007 — Skill 脚本运行时形态
 
-- **Status**: Proposed (spiral 2 启动决策)
-- **Date**: 2026-06-24
+- **Status**: Accepted (spiral 2.1 实现完成)
+- **Date**: 2026-06-24 (proposed), 2026-06-25 (accepted)
 - **Supersedes / Relates to**: [ADR 0006](0006-skill-plugin-form.md)
+- **Implementation**: `packages/skills/src/runtime/exec-on-disk.ts`; tests in `packages/skills/test/exec-on-disk.test.ts`; demo skill in `examples/skills/greet/`
 
 ## 背景
 
@@ -115,17 +116,35 @@ handler 调用期间，actor bus 的 actor 是 `{ kind: 'skill', name, source }`
 
 ## 验收
 
-spiral 2 close 前要能演示：
+实现要点（已落地）：
+
+- `resolveEntrypoint()`：按 `metadata.x_harness.entrypoint`，否则按 `handler.{ts,mts,js,mjs,sh,py}` 探测。
+- `planSpawn()`：`node-ts` → `node --import tsx`；`node-js` → `node`；`sh` → `/bin/sh`；`python` → `python3` (可由 `X_HARNESS_PYTHON` 覆盖)。
+- 进程组隔离（`detached: true`，kill 时 `process.kill(-pid)`），grand-child（如 `sleep`、`python3` 子进程）也能被超时清掉。
+- stdin 投递 `{args, context: {sessionId, cwd, skillDir, skillName}}`；env 注入 `X_HARNESS_ACTOR=skill:<name>` + `X_HARNESS_SKILL_DIR` + `X_HARNESS_SESSION_ID`（Rust kernel 在 spiral 2.2 读这些）。
+- stdout 末行 JSON 作为结果；之前的输出和 stderr 仅记到 `meta.chatter` / `meta.stderr`，**不**回喂 model。
+- 超时（默认 60s，硬上限 5min）和 AbortSignal 都走同一个 `killTree` 路径（SIGTERM，1s 后 SIGKILL）。
+- 输出总量 256KB 截断。
+
+验收脚本（6 例已通过）：
 
 ```
-~/.x_harness/skills/greet/
-  SKILL.md       (frontmatter: name=greet, description=..., runtime=node-ts)
-  handler.ts
+pnpm tsx packages/skills/test/exec-on-disk.test.ts
+# ✓ greet-ts   (node-ts，stdout 含 chatter)
+# ✓ noisy-sh   (sh，多行 stdout + stderr，meta 携带 lines=2)
+# ✓ broken-no-json (sh，未输出 JSON 末行 → error=true 且 audit 保留原始 stdout)
+# ✓ no-handler-script (仅 SKILL.md，displayed-only)
+# ✓ sleepy     (timeout_ms=200，~200ms 内 killTree 收回 `sleep 5`)
+# ✓ whoami     (env X_HARNESS_ACTOR=skill:whoami)
 ```
+
+端到端：
 
 ```bash
+cp -R examples/skills/greet ~/.x_harness/skills/
 pnpm x chat
-# > 跟我打个招呼，用 greet skill
-# (模型调用 greet → spawn → stdout JSON → output 回 model)
-# (audit log 显示 actor=skill:greet)
+# > 用 greet skill 跟 Alice 打招呼
+# 模型 → tool call greet({name:"Alice"}) → spawn node --import tsx ~/.x_harness/skills/greet/handler.ts
+# → stdout JSON `{"output":"hello Alice! …"}` → 回喂 model
+# audit log: tool.call/actor=skill:greet, tool.result/output=...
 ```
