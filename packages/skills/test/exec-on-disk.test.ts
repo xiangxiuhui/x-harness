@@ -38,6 +38,7 @@ name: greet-ts
 description: greet by name (ts)
 metadata:
   x_harness:
+    expose_as_tool: true
     runtime: node-ts
 ---
 hi
@@ -67,6 +68,7 @@ name: noisy-sh
 description: shell script that emits multi-line stdout
 metadata:
   x_harness:
+    expose_as_tool: true
     runtime: sh
 ---
 `,
@@ -90,6 +92,7 @@ name: broken-no-json
 description: prints garbage, no JSON reply
 metadata:
   x_harness:
+    expose_as_tool: true
     runtime: sh
 ---
 `,
@@ -188,6 +191,7 @@ name: sleepy
 description: never returns in time
 metadata:
   x_harness:
+    expose_as_tool: true
     runtime: sh
     timeout_ms: 200
 ---
@@ -230,6 +234,7 @@ name: whoami
 description: echoes its actor env
 metadata:
   x_harness:
+    expose_as_tool: true
     runtime: sh
 ---
 `,

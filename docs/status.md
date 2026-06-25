@@ -1,8 +1,19 @@
-# Status — 代码现状一页（spiral 1 close）
+# Status — 代码现状一页（spiral 2 in-flight）
 
 > 这一页是给"上下文压缩后的未来 self"看的：当前 repo 里**实际有什么**，对应 vision 和 ADR 里的**哪一条**，**哪些没有**。
 
-更新时间：2026-06-25（spiral 2.1 done — on-disk skill runtime 已落地）。
+更新时间：2026-06-25（spiral 2.1 done **but partially superseded**：ADR-0008 把 on-disk skill 从 "tool wrapper" 回归到 "agentskills.io 标准 doc + scripts"）。
+
+## ⚠️ Spiral 2.1 方向纠正记录
+
+| 时间 | 事件 |
+|---|---|
+| 2026-06-25 上午 | ADR-0007 Accepted；examples/skills/greet 用 handler.ts 跑通 |
+| 2026-06-25 下午 | 真实世界 `anthropics/skills/pdf` 测试 → 暴露认知错误：skill ≠ tool；它是 filesystem doc，按 progressive disclosure 三级加载 |
+| 2026-06-25 下午 | ADR-0008 Accepted；ADR-0007 Superseded（stdio runtime 降级为 opt-in `expose_as_tool: true`）|
+| 2026-06-25 下午 | greet 重写为 anthropic 标准形态（SKILL.md body + scripts/greet.sh，无 handler）|
+
+这是螺旋开发的正确暴露——错误前提通过真实使用浮出水面，回退一个 commit 远比堆十个 commit 在错的假设上便宜。
 
 ---
 
@@ -11,7 +22,7 @@
 ```
 packages/
 ├── provider/   DeepSeek (OpenAI-compatible SSE) — ADR-0003
-├── skills/     v0 loader + 4 builtin + frontmatter parser + **on-disk runtime** — ADR-0006/0007
+├── skills/     v0 loader + 4 builtin + frontmatter parser + **on-disk runtime (opt-in via expose_as_tool)** — ADR-0006/0007/**0008**
 ├── danger/     pure rule engine v0 (3 Class-A + 5 Class-B) — ADR-0005
 ├── memory/     JSONL append log + replay + index — ADR-0002
 ├── core/       Session w/ tool-loop + actor bus + memory sink hook

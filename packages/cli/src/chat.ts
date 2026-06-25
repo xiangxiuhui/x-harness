@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
 import * as readline from 'node:readline/promises';
 import { stdin, stdout, stderr } from 'node:process';
 import {
@@ -10,17 +11,47 @@ import {
   type MemorySink,
 } from '@x_harness/core';
 import { createDeepSeekProviderFromEnv } from '@x_harness/provider';
-import { buildSkillRegistry } from '@x_harness/skills';
+import { buildSkillRegistry, type Skill } from '@x_harness/skills';
 import { DangerEngine, defaultDangerContext } from '@x_harness/danger';
 import { MemoryStore, readSession, replayToMessages } from '@x_harness/memory';
 import { findRepoRoot } from './repo.js';
 
 const DEFAULT_SYSTEM_PROMPT =
   'You are running inside x_harness, an AI operating system harness on macOS. ' +
-  'You have access to tools (skills) that let you read/write files, run shell ' +
+  'You have access to builtin tools that let you read/write files, run shell ' +
   'commands, and fetch URLs. Use them whenever the user asks for anything that ' +
   'requires looking at or changing the actual system; do not pretend or guess. ' +
   'Be concise — show output, not commentary.';
+
+/**
+ * ADR-0008 progressive-disclosure addendum: list every doc-only skill with
+ * its name + description + SKILL.md absolute path. The model decides when
+ * to `file.read` the SKILL.md and follow its instructions (typically
+ * `shell.run` on bundled scripts).
+ */
+function skillsAddendum(docSkills: Skill[]): string {
+  if (docSkills.length === 0) return '';
+  const lines: string[] = [];
+  lines.push('');
+  lines.push('## Available skills (filesystem-based, agentskills.io standard)');
+  lines.push('');
+  lines.push('These are knowledge packs you can self-load when relevant:');
+  lines.push('');
+  for (const s of docSkills) {
+    const fm = s.frontmatter;
+    const dir = s.dir ?? '';
+    const md = dir ? `${dir}/SKILL.md` : '<unknown>';
+    lines.push(`- **${fm.name}** — ${fm.description}`);
+    lines.push(`  path: ${md}`);
+  }
+  lines.push('');
+  lines.push('To use a skill:');
+  lines.push('1. Call `file.read` on the SKILL.md path above to load its instructions into your context.');
+  lines.push('2. Follow those instructions. They typically tell you to run bundled scripts via `shell.run` (with absolute paths).');
+  lines.push('3. Scripts return stdout via the tool result; the script source itself never enters your context unless you read it.');
+  lines.push('Pick a skill only when its description clearly matches the user request; otherwise just use builtin tools directly.');
+  return lines.join('\n');
+}
 
 const EXIT_WORDS = new Set([
   '/exit', '/quit', '/q', ':q', ':quit', 'exit', 'quit', 'bye', 'q',
@@ -57,9 +88,16 @@ export async function runChat(args: string[]): Promise<number> {
   }
 
   const repoRoot = findRepoRoot(process.cwd());
-  const registry = buildSkillRegistry({ repoRoot });
 
   const xHarnessHome = process.env.X_HARNESS_HOME ?? join(homedir(), '.x_harness');
+  // Ensure standard subdirs exist so that `cp -R src ~/.x_harness/skills/`
+  // never collapses into a file rename when the target dir is missing.
+  for (const sub of ['skills', 'memory', 'evolution']) {
+    try { mkdirSync(join(xHarnessHome, sub), { recursive: true }); } catch { /* noop */ }
+  }
+
+  const registry = buildSkillRegistry({ repoRoot });
+
   const dangerEngine = new DangerEngine();
   const dangerContext = defaultDangerContext({
     xHarnessHome,
@@ -157,11 +195,14 @@ export async function runChat(args: string[]): Promise<number> {
       }),
   };
 
+  const docSkills = registry.docSkills().filter((s) => s.source !== 'builtin');
+  const systemPrompt = DEFAULT_SYSTEM_PROMPT + skillsAddendum(docSkills);
+
   const session = new Session({
     provider,
     humanUserId: process.env.USER ?? 'human',
     humanSurface: 'cli',
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    systemPrompt,
     skills: registry,
     cwd: process.cwd(),
     dangerEngine,
@@ -173,10 +214,12 @@ export async function runChat(args: string[]): Promise<number> {
   });
 
   const skillNames = registry.executable().map((s) => s.frontmatter.name);
+  const docNames = docSkills.map((s) => s.frontmatter.name);
   stdout.write(
     `\n${actorBadge(session.humanActor)} ↔ ${actorBadge(session.modelActor)}\n` +
       `(session ${session.id})\n` +
-      `(skills: ${skillNames.join(', ') || '<none>'})\n` +
+      `(tools: ${skillNames.join(', ') || '<none>'})\n` +
+      `(doc-skills: ${docNames.join(', ') || '<none>'})\n` +
       `(guard: ADR-0005, home=${xHarnessHome})\n` +
       `(commands: exit | /skills | /help    keys: Ctrl+C aborts reply, Ctrl+D exits)\n\n`,
   );

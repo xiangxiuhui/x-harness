@@ -49,6 +49,15 @@ export class SkillRegistry {
   toolSpecs(): ToolSpec[] {
     return this.executable().map(skillToToolSpec);
   }
+
+  /**
+   * ADR-0008 — skills that act as docs (not tools). Every loaded skill
+   * without an executable handler counts as a doc skill: the model is
+   * expected to read its SKILL.md via file.read on demand.
+   */
+  docSkills(): Skill[] {
+    return this.list().filter((s) => typeof s.handler !== 'function');
+  }
 }
 
 export interface BuildRegistryOptions extends SkillSources {
@@ -70,10 +79,12 @@ export function buildSkillRegistry(opts: BuildRegistryOptions = {}): SkillRegist
     projectDir: opts.projectDir ?? defaultSkillSources(opts.repoRoot).projectDir,
   };
   for (const parsed of loadAllSkillFiles(sources)) {
-    // On-disk skills can declare a runtime (ADR-0007) and get an executable
-    // handler via the wrapper. If no script is present, the skill stays
-    // displayed-only.
-    reg.add(withOnDiskHandler(parsed));
+    // ADR-0008: skill is a filesystem-based doc by default; the model uses
+    // builtin file.read / shell.run to navigate it (progressive disclosure).
+    // Only opt into the ADR-0007 stdio tool-wrapper when frontmatter declares
+    // `metadata.x_harness.expose_as_tool: true`.
+    const optIn = parsed.frontmatter.metadata?.x_harness?.expose_as_tool === true;
+    reg.add(optIn ? withOnDiskHandler(parsed) : { ...parsed });
   }
   return reg;
 }

@@ -1,9 +1,32 @@
 # ADR 0007 — Skill 脚本运行时形态
 
-- **Status**: Accepted (spiral 2.1 实现完成)
-- **Date**: 2026-06-24 (proposed), 2026-06-25 (accepted)
-- **Supersedes / Relates to**: [ADR 0006](0006-skill-plugin-form.md)
-- **Implementation**: `packages/skills/src/runtime/exec-on-disk.ts`; tests in `packages/skills/test/exec-on-disk.test.ts`; demo skill in `examples/skills/greet/`
+- **Status**: **Superseded by [ADR-0008](0008-skill-loading-per-agentskills.md)** (2026-06-25)
+  - 原 Status：Accepted (2026-06-24, spiral 2.1)
+  - 本 ADR 的 stdio runtime 机制**保留为 opt-in**（`expose_as_tool: true`），但**不再是 on-disk skill 的默认运行方式**
+- **Date**: 2026-06-24 (proposed → accepted), 2026-06-25 (superseded)
+- **Supersedes / Relates to**: [ADR 0006](0006-skill-plugin-form.md), [ADR 0008](0008-skill-loading-per-agentskills.md)
+- **Implementation**: `packages/skills/src/runtime/exec-on-disk.ts`; tests in `packages/skills/test/exec-on-disk.test.ts`; demo skill **重写** in `examples/skills/greet/`
+
+## 复盘：这个 ADR 错在哪
+
+写完后用真实世界的 `anthropics/skills/pdf` 验证时立刻暴露：
+
+1. **认知偏差**：把"让 on-disk skill 跑起来"等同于"包成 OpenAI tool_calls 工具"。
+   - agentskills.io 开放标准里，skill 是 **filesystem directory（文档 + 可选脚本）**，**不是 tool**。
+   - 模型用 builtin 的 bash/file 工具自己读 SKILL.md（L2）、自己跑 scripts（L3）。
+   - "skill 不是 tool" 这条线 ADR-0006 §"Skill 触发方式" 其实说过，是本 ADR 偷换了"调用"的含义。
+
+2. **追溯根源**：spiral 1 D 步骤里我让 4 个 builtin 工具（shell.run / file.read / file.write / web.fetch）复用 `Skill` 类型——本意只是"少一种数据结构"，但当 spiral 2 要"让 user-level skill 也跑起来"时，潜意识把"builtin 用 Skill 包了一层" 反向推导成 **"所有 skill 都该有 handler"**。
+
+3. **stdio JSON 协议是副产品**：选了 handler 抽象后，为了跨语言互通发明的胶水（args→stdin，result→stdout 末行，chatter→audit）。它本身没有技术问题，但**它不该是 skill 的默认机制**——它至多是"想做严格签名工具 wrapper"的可选附加形态。
+
+4. **正确路径**：ADR-0008 把 skill 加载回归 agentskills.io 三级加载模型，让 anthropic 的 pdf/pptx/xlsx/docx 和社区 skill **零代码改动即可使用**。
+
+## 保留 vs 降级
+
+下面所有"## 决策 / 细节"段**保留为 opt-in 形态**——即 frontmatter 显式 `metadata.x_harness.expose_as_tool: true` 时启用。代码、测试、demo 全部保留，6 case 测试仍然通过。这给"我有一个签名清晰的纯函数，想严格暴露给模型"留一扇门。
+
+---
 
 ## 背景
 

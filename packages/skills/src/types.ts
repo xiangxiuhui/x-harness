@@ -27,6 +27,10 @@ export interface SkillFrontmatter {
       side_effects?: string[];
       tags?: string[];
       related_skills?: string[];
+      /** ADR-0008 — opt-in: expose this skill as a tool wrapper using the
+       *  ADR-0007 stdio runtime. Default false (skill = doc-only, model
+       *  uses bash/file tools to read/run it). */
+      expose_as_tool?: boolean;
       /** ADR-0007 — on-disk skill runtime. */
       runtime?: SkillRuntime;
       /** Relative path to the handler script. Default: handler.<ext> auto-detect. */
