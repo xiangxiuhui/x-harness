@@ -7,11 +7,8 @@
   },
   "include": ["src/**/*"],
   "references": [
-    { "path": "../core" },
-    { "path": "../provider" },
-    { "path": "../skills" },
-    { "path": "../danger" },
     { "path": "../memory" },
-    { "path": "../web" }
+    { "path": "../skills" },
+    { "path": "../core" }
   ]
 }

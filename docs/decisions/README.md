@@ -16,6 +16,7 @@
 | [0008](0008-skill-loading-per-agentskills.md) | Skill loading per agentskills.io（skill = doc, not tool） | Accepted |
 | [0009](0009-intent-provenance.md) | Intent Provenance & AI-touch watermark | Accepted |
 | [0010](0010-world-awareness.md) | World Awareness Strategy (Patrol + Territory) | Accepted (schema); impl = spiral 2/2b |
+| [0011](0011-surface-parity.md) | Surface Parity (CLI ↔ Web ↔ future) | Accepted |
 
 ## ADR 模板
 

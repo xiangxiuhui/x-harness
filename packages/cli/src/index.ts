@@ -8,6 +8,7 @@
 import { loadDotEnv } from './dotenv.js';
 import { runChat } from './chat.js';
 import { runSessions } from './sessions.js';
+import { runWeb } from './web.js';
 
 const USAGE = `x_harness CLI (spiral 1)
 
@@ -15,6 +16,7 @@ Usage:
   x chat [--resume <id>]      Start an interactive chat with DeepSeek.
   x sessions ls               List recorded sessions.
   x sessions show <id>        Print a session transcript (audit view).
+  x web [--port N]            Start the local read-only web UI (ADR-0011).
   x version
 
 Environment:
@@ -43,6 +45,8 @@ async function main(): Promise<number> {
       return runChat(rest);
     case 'sessions':
       return runSessions(rest);
+    case 'web':
+      return runWeb(rest);
     default:
       process.stderr.write(`unknown command: ${cmd}\n\n${USAGE}`);
       return 2;

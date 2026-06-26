@@ -1,0 +1,14 @@
+{
+  "name": "@x_harness/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "build": "tsc -b" },
+  "dependencies": {
+    "@x_harness/memory": "workspace:*",
+    "@x_harness/skills": "workspace:*",
+    "@x_harness/core": "workspace:*"
+  }
+}
