@@ -31,7 +31,20 @@ const routes = [
   { re: /^#\/sessions\/([^/]+)$/, fn: (m) => viewSession(m[1], false) },
   { re: /^#\/territory$/, fn: viewTerritory },
   { re: /^#\/skills$/, fn: viewSkills },
+  { re: /^#\/trace(?:\?(.*))?$/, fn: (m) => viewTrace(parseQuery(m[1] || '').path) },
 ];
+
+function parseQuery(qs) {
+  const out = {};
+  for (const kv of qs.split('&')) {
+    if (!kv) continue;
+    const i = kv.indexOf('=');
+    const k = decodeURIComponent(i < 0 ? kv : kv.slice(0, i));
+    const v = decodeURIComponent(i < 0 ? '' : kv.slice(i + 1));
+    out[k] = v;
+  }
+  return out;
+}
 
 function route() {
   const h = location.hash || '#/sessions';
@@ -254,4 +267,89 @@ async function viewSkills() {
   }
   tbl.append(tbody);
   $view.append(tbl);
+}
+
+// ─── trace view (ADR-0009) ──────────────────────────────────────────────
+async function viewTrace(initialPath) {
+  $view.replaceChildren();
+  $view.append(el('h2', {}, 'AI-touch trace'));
+  $view.append(
+    el('p', { class: 'muted' },
+      'Mirror of ', el('code', {}, 'x trace <path>'),
+      '. Reads the ', el('code', {}, 'com.x_harness.ai_touch'),
+      ' xattr and resolves into the session JSONL.'),
+  );
+
+  const form = el('form', { class: 'trace-form' });
+  const input = el('input', {
+    type: 'text', name: 'p', placeholder: '/absolute/path/to/file',
+    value: initialPath || '', autofocus: 'autofocus', spellcheck: 'false',
+  });
+  const btn = el('button', { type: 'submit' }, 'trace');
+  form.append(input, btn);
+  $view.append(form);
+
+  const out = el('div', { class: 'trace-out' });
+  $view.append(out);
+
+  async function run(p) {
+    out.replaceChildren(el('div', { class: 'muted' }, 'looking up…'));
+    try {
+      const r = await fetch('/api/trace?path=' + encodeURIComponent(p)).then((x) => x.json());
+      out.replaceChildren(renderTrace(r));
+    } catch (e) {
+      out.replaceChildren(el('div', { class: 'err' }, 'error: ' + (e?.message || e)));
+    }
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = input.value.trim();
+    if (!v) return;
+    location.hash = '#/trace?path=' + encodeURIComponent(v);
+    run(v);
+  });
+
+  if (initialPath) run(initialPath);
+}
+
+function renderTrace(r) {
+  const root = el('div', { class: 'trace-card' });
+  root.append(el('div', { class: 'trace-path' }, r.path));
+  if (!r.xattr) {
+    root.append(el('div', { class: 'trace-empty' }, 'no AI-touch xattr on this file'));
+    if (r.notes?.length) {
+      root.append(el('div', { class: 'muted' }, r.notes.join(' · ')));
+    }
+    return root;
+  }
+  const x = r.xattr;
+  const f = r.full;
+  const exec = f
+    ? (f.executor.kind === 'skill' ? 'skill:' + f.executor.name
+      : f.executor.kind === 'model' ? 'model:' + f.executor.provider + '/' + f.executor.model
+      : f.executor.kind === 'human' ? 'human:' + f.executor.surface
+      : 'system:' + f.executor.subsystem)
+    : x.x;
+  root.append(el('div', { class: 'trace-row' }, el('span', { class: 'k' }, 'touched'), el('span', { class: 'v ok' }, x.ts)));
+  root.append(el('div', { class: 'trace-row' }, el('span', { class: 'k' }, 'executor'), el('span', { class: 'v' }, exec)));
+  root.append(el('div', { class: 'trace-row' }, el('span', { class: 'k' }, 'autonomy'), el('span', { class: 'v' }, (f?.autonomy) || x.a)));
+  if (f?.originatingHumanMessage) {
+    root.append(el('div', { class: 'trace-row' },
+      el('span', { class: 'k' }, 'originated'),
+      el('span', { class: 'v' }, el('em', {}, '"' + f.originatingHumanMessage + '"'))));
+  }
+  if (f?.humanApproval || x.ap) {
+    root.append(el('div', { class: 'trace-row' },
+      el('span', { class: 'k' }, 'approval'),
+      el('span', { class: 'v' }, f?.humanApproval ? (f.humanApproval.decision + ' (' + f.humanApproval.ruleIds.join('+') + ')') : x.ap)));
+  }
+  const sess = f?.sessionId || x.s;
+  root.append(el('div', { class: 'trace-row' },
+    el('span', { class: 'k' }, 'session'),
+    el('span', { class: 'v' }, el('a', { href: '#/sessions/' + sess }, sess))));
+  if (!f && r.notes?.length) {
+    root.append(el('div', { class: 'muted' }, r.notes.join(' · ')));
+  }
+  return root;
 }

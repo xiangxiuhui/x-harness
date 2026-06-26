@@ -9,6 +9,7 @@ import { loadDotEnv } from './dotenv.js';
 import { runChat } from './chat.js';
 import { runSessions } from './sessions.js';
 import { runWeb } from './web.js';
+import { runTrace } from './trace.js';
 
 const USAGE = `x_harness CLI (spiral 1)
 
@@ -17,6 +18,7 @@ Usage:
   x sessions ls               List recorded sessions.
   x sessions show <id>        Print a session transcript (audit view).
   x web [--port N]            Start the local read-only web UI (ADR-0011).
+  x trace <path> [--json]     Show AI-touch provenance on a file (ADR-0009).
   x version
 
 Environment:
@@ -47,6 +49,8 @@ async function main(): Promise<number> {
       return runSessions(rest);
     case 'web':
       return runWeb(rest);
+    case 'trace':
+      return runTrace(rest);
     default:
       process.stderr.write(`unknown command: ${cmd}\n\n${USAGE}`);
       return 2;

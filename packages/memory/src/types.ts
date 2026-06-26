@@ -32,7 +32,8 @@ export type MemoryEntry =
   | MemoryEntryBase<'tool.approval', { id: string; name: string; decision: 'allow' | 'allow-and-preapprove' | 'deny'; preapprovedRuleIds?: string[] }>
   | MemoryEntryBase<'tool.result', { id: string; name: string; output: string; error?: boolean; blocked?: boolean }>
   | MemoryEntryBase<'session.end', { reason: 'bye' | 'eof' | 'error'; turns: number }>
-  | MemoryEntryBase<'territory.loaded', { path: string; version: number | null; zones: string[]; generatedDefault: boolean }>;
+  | MemoryEntryBase<'territory.loaded', { path: string; version: number | null; zones: string[]; generatedDefault: boolean }>
+  | MemoryEntryBase<'provenance.attach', { provenance: { v: 1; ts: string; sessionId: string; originatingHumanMessageSeq?: number; originatingHumanMessage?: string; executor: unknown; autonomy: string; humanApproval?: unknown; sessionTrigger?: string; xHarnessHome: string; path: string }; xattrOk: boolean; xattrError?: string }>;
 
 export interface SessionIndexEntry {
   sessionId: string;

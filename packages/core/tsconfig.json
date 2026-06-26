@@ -9,6 +9,7 @@
   "references": [
     { "path": "../provider" },
     { "path": "../skills" },
-    { "path": "../danger" }
+    { "path": "../danger" },
+    { "path": "../provenance" }
   ]
 }

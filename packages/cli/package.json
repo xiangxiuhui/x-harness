@@ -19,6 +19,7 @@
     "@x_harness/skills": "workspace:*",
     "@x_harness/danger": "workspace:*",
     "@x_harness/memory": "workspace:*",
-    "@x_harness/web": "workspace:*"
+    "@x_harness/web": "workspace:*",
+    "@x_harness/provenance": "workspace:*"
   }
 }

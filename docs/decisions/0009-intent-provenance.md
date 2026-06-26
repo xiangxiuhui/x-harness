@@ -173,3 +173,35 @@ x untouch <path>
 - xattr writer：`crates/x_kernel/src/ai_touch.rs` (spiral 2/2a 新建) + Node binding
 - CLI：`packages/cli/src/trace.ts` (新建 `x trace` 子命令)
 - 测试：`packages/memory/test/provenance.test.ts` + `crates/x_kernel/tests/ai_touch.rs`
+
+## Implementation update (2026-06-26, spiral 2/2a)
+
+实装位置与原计划略有出入（**仍符合本 ADR**），记录如下：
+
+| 计划 | 实装 |
+|---|---|
+| `packages/memory/src/provenance.ts` 类型 | **`@x_harness/provenance`** 独立包 — 隔离 OS 调用 |
+| `crates/x_kernel/src/ai_touch.rs` Rust binding | **shell-out 到 `xattr(1)` / `setfattr`** — 见下方"Rust 暂缓"段 |
+| Node binding | 同上：`spawnSync` + 文本 IO，无原生扩展 |
+| `Session` 在 builtin tool 前后填字段 | ✅ 通过 `ctx.attachProvenance(path)` binder，每个 tool 调用一次 |
+| `x trace` 子命令 | ✅ + 同一份 loader 暴露给 Web `/api/trace` |
+
+### 关于"为何先不写 Rust"
+
+- 本 ADR 早就声明 **JSONL 是 source of truth, xattr 是 forward index**。索引是不是 Rust 实现，与正确性无关。
+- 本机暂无 cargo；强引入会破坏"零运行依赖"的 spiral-2 原则。
+- `XattrOps` 接口已经画好（`packages/provenance/src/xattr.ts`），将来要塞 Rust binding 不影响调用方。
+- 真正"必须 Rust"的触发条件：
+  1. 批量打 watermark（万级文件）shell-out 太慢；
+  2. 想监听 fs 事件并自动恢复缺失 watermark（`fanotify`/`FSEvents`）；
+  3. 跨 OS 时 shell 工具差异治理成本超过自己写一份的成本。
+
+### v0 自治判定的简化（待 spiral 2/2b 完善）
+
+当前 `autonomy` 只产生 `human-implied`（有过 user 消息）或 `model-self-initiated`（idle）两值。
+真正的 4 级谱（instructed / implied / elaborated / self-initiated）需要：
+- 提示文本 vs 动作的语义比对（"是不是用户原话点了名"）
+- 多步规划检测（"是不是被一个上层目标分解出来"）
+
+这两件事 spiral 2/4（进化采集）顺便做：因为接受/拒绝按钮要展示"AI 是自作主张还是按你说的做"，
+正好需要这个数据。

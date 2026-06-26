@@ -9,6 +9,7 @@
   "references": [
     { "path": "../memory" },
     { "path": "../skills" },
-    { "path": "../core" }
+    { "path": "../core" },
+    { "path": "../provenance" }
   ]
 }

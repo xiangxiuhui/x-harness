@@ -29,6 +29,9 @@ importers:
       '@x_harness/memory':
         specifier: workspace:*
         version: link:../memory
+      '@x_harness/provenance':
+        specifier: workspace:*
+        version: link:../provenance
       '@x_harness/provider':
         specifier: workspace:*
         version: link:../provider
@@ -44,6 +47,9 @@ importers:
       '@x_harness/danger':
         specifier: workspace:*
         version: link:../danger
+      '@x_harness/provenance':
+        specifier: workspace:*
+        version: link:../provenance
       '@x_harness/provider':
         specifier: workspace:*
         version: link:../provider
@@ -58,6 +64,8 @@ importers:
       '@x_harness/provider':
         specifier: workspace:*
         version: link:../provider
+
+  packages/provenance: {}
 
   packages/provider: {}
 
@@ -77,6 +85,9 @@ importers:
       '@x_harness/memory':
         specifier: workspace:*
         version: link:../memory
+      '@x_harness/provenance':
+        specifier: workspace:*
+        version: link:../provenance
       '@x_harness/skills':
         specifier: workspace:*
         version: link:../skills

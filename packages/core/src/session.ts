@@ -11,6 +11,12 @@ import type {
   DangerEngine,
   DangerVerdict,
 } from '@x_harness/danger';
+import type {
+  Executor,
+  IntentProvenance,
+} from '@x_harness/provenance';
+import { writeAiTouch } from '@x_harness/provenance';
+import type { ProvenanceAttachResult } from '@x_harness/skills';
 import { ActorBus } from './bus.js';
 import type { Actor, HumanSurface } from './actor.js';
 
@@ -40,6 +46,17 @@ export interface SessionOptions {
   resumeMessages?: ReadonlyArray<Message>;
   /** When resuming, override the auto-generated id. */
   sessionId?: string;
+  /**
+   * Provenance config (ADR-0009). When set, mutating skills can call
+   * `ctx.attachProvenance(absPath)` to mark files with an AI-touch xattr
+   * AND emit a `provenance.attach` event into the memory sink.
+   */
+  provenance?: {
+    /** Absolute path of ~/.x_harness; required so xattr & JSONL agree. */
+    xHarnessHome: string;
+    /** What kind of executor we're operating as (model, skill resolved per-call). */
+    defaultExecutor?: Executor;
+  };
 }
 
 /**
@@ -74,6 +91,12 @@ export interface MemorySink {
     output: string;
     error?: boolean;
     blocked?: boolean;
+  }): void | Promise<void>;
+  /** ADR-0009 — emitted right after a skill attached AI-touch provenance to a file. */
+  onProvenanceAttach?(payload: {
+    provenance: IntentProvenance;
+    xattrOk: boolean;
+    xattrError?: string;
   }): void | Promise<void>;
 }
 
@@ -131,6 +154,11 @@ export class Session {
   /** Mutable per-session pre-approvals (rule id -> true). */
   private classAPreapprovals: Record<string, boolean>;
   private readonly memory?: MemorySink;
+  private readonly provenanceConfig?: SessionOptions['provenance'];
+  /** Last human turn text (truncated). Used as IntentProvenance.originatingHumanMessage. */
+  private lastHumanMessage?: string;
+  /** Ordinal of human turns within this session, 1-based. */
+  private humanTurnOrdinal = 0;
 
   constructor(opts: SessionOptions) {
     this.id = opts.sessionId ?? `sess-${Math.random().toString(36).slice(2, 10)}`;
@@ -144,6 +172,7 @@ export class Session {
     this.dangerContext = opts.dangerContext;
     this.confirmDanger = opts.confirmDanger;
     this.classAPreapprovals = { ...(opts.dangerContext?.classAPreapprovals ?? {}) };
+    this.provenanceConfig = opts.provenance;
     this.humanActor = {
       kind: 'human',
       userId: opts.humanUserId,
@@ -182,6 +211,10 @@ export class Session {
 
   pushUser(content: string): void {
     this.messages.push({ role: 'user', content });
+    this.humanTurnOrdinal += 1;
+    // Truncate to keep xattr small AND avoid storing huge user messages in
+    // every provenance record (full text already lives in JSONL).
+    this.lastHumanMessage = content.length > 500 ? content.slice(0, 500) + '…' : content;
     this.bus.publish({
       actor: this.humanActor,
       kind: 'message.user',
@@ -397,6 +430,7 @@ export class Session {
                 sessionId: this.id,
                 cwd: this.cwd,
                 signal,
+                attachProvenance: this.buildAttachProvenance(skill.frontmatter.name),
               });
               output = result.output;
               error = result.error;
@@ -436,6 +470,51 @@ export class Session {
 
   private appendToolResult(id: string, output: string): void {
     this.messages.push({ role: 'tool', toolCallId: id, content: output });
+  }
+
+  /**
+   * Build a per-invocation `attachProvenance` binder bound to the current
+   * session state and the calling skill. Returns undefined if provenance
+   * config wasn't set (caller skill ctx will see attachProvenance as undef).
+   *
+   * Autonomy heuristic (v0):
+   *   - if lastHumanMessage is set within this session → `human-implied`
+   *     (we cannot reliably detect "human-instructed" without semantic
+   *     diff between the user message and the chosen action; v1 work.)
+   *   - else → `model-self-initiated`
+   * "model-elaborated" requires multi-step plan introspection; defer.
+   */
+  private buildAttachProvenance(
+    skillName: string,
+  ): ((absPath: string) => Promise<ProvenanceAttachResult | undefined>) | undefined {
+    const cfg = this.provenanceConfig;
+    if (!cfg) return undefined;
+    const xHarnessHome = cfg.xHarnessHome;
+    const ordinal = this.humanTurnOrdinal;
+    const lastMsg = this.lastHumanMessage;
+    const sessionId = this.id;
+    const memory = this.memory;
+    return async (absPath: string): Promise<ProvenanceAttachResult | undefined> => {
+      const provenance: IntentProvenance = {
+        v: 1,
+        ts: new Date().toISOString(),
+        sessionId,
+        originatingHumanMessageSeq: ordinal > 0 ? ordinal : undefined,
+        originatingHumanMessage: lastMsg,
+        executor: { kind: 'skill', name: skillName },
+        autonomy: ordinal > 0 ? 'human-implied' : 'model-self-initiated',
+        sessionTrigger: 'fresh',
+        xHarnessHome,
+        path: absPath,
+      };
+      const r = writeAiTouch(provenance);
+      await memory?.onProvenanceAttach?.({
+        provenance,
+        xattrOk: r.ok,
+        xattrError: r.error,
+      });
+      return { ok: r.ok, error: r.error, xattr: r.xattr as unknown as Record<string, unknown> };
+    };
   }
 
   snapshot(): readonly Message[] {

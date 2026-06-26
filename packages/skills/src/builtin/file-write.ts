@@ -16,9 +16,11 @@ const handler: SkillHandler = async (args, ctx) => {
       await fs.writeFile(full, content, 'utf8');
     }
     const stat = await fs.stat(full);
+    // ADR-0009 — mark the file with AI-touch provenance (xattr + JSONL).
+    const prov = await ctx.attachProvenance?.(full);
     return {
       output: `wrote ${stat.size} bytes to ${full} (mode=${mode})`,
-      meta: { full, size: stat.size, mode },
+      meta: { full, size: stat.size, mode, provenance: prov },
     };
   } catch (e) {
     return { output: `error writing ${full}: ${(e as Error).message}`, error: true };

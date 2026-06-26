@@ -65,3 +65,17 @@ pre { background: var(--bg-2); padding: 10px 12px; border: 1px solid var(--borde
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 .zone { display: inline-block; padding: 2px 8px; margin: 0 6px 6px 0; border: 1px solid var(--border);
   border-radius: 3px; background: var(--bg-2); }
+
+/* trace view */
+.trace-form { display:flex; gap:.5rem; margin:1rem 0; }
+.trace-form input { flex:1; padding:.55rem .7rem; border:1px solid #333; background:#0e0e10; color:#ddd; border-radius:6px; font-family:inherit; }
+.trace-form button { padding:.55rem 1.1rem; border:1px solid #444; background:#1a1a1c; color:#ddd; border-radius:6px; cursor:pointer; }
+.trace-form button:hover { background:#26262a; }
+.trace-card { border:1px solid #2a2a2e; border-radius:8px; padding:1rem; background:#131316; }
+.trace-path { font-family:ui-monospace,Menlo,monospace; word-break:break-all; color:#cfd; margin-bottom:.6rem; }
+.trace-row { display:flex; gap:1rem; padding:.25rem 0; border-top:1px dashed #2a2a2e; }
+.trace-row .k { width:6.5rem; color:#888; }
+.trace-row .v { flex:1; word-break:break-word; }
+.trace-row .v.ok { color:#8f8; }
+.trace-empty { color:#fc6; padding:.4rem 0; }
+.err { color:#f88; }

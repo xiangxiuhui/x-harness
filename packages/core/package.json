@@ -13,6 +13,7 @@
   "dependencies": {
     "@x_harness/provider": "workspace:*",
     "@x_harness/skills": "workspace:*",
-    "@x_harness/danger": "workspace:*"
+    "@x_harness/danger": "workspace:*",
+    "@x_harness/provenance": "workspace:*"
   }
 }

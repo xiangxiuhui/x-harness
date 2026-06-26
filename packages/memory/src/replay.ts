@@ -102,6 +102,8 @@ export function digestEntry(e: MemoryEntry): string {
       return `[${t}] ── session end (${e.payload.reason}, ${e.payload.turns} turns)`;
     case 'territory.loaded':
       return `[${t}] sys:territory loaded ${e.payload.zones.length} zone(s)${e.payload.generatedDefault ? ' (default created)' : ''}`;
+    case 'provenance.attach':
+      return `[${t}] sys:provenance ${e.payload.xattrOk ? '✓' : '✗'} ${e.payload.provenance.path} (${e.payload.provenance.autonomy})`;
   }
 }
 

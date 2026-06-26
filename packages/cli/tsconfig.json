@@ -12,6 +12,7 @@
     { "path": "../skills" },
     { "path": "../danger" },
     { "path": "../memory" },
-    { "path": "../web" }
+    { "path": "../web" },
+    { "path": "../provenance" }
   ]
 }

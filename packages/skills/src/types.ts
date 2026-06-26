@@ -67,6 +67,29 @@ export interface SkillContext {
   cwd: string;
   /** Abort signal — for shell.run-like long ops. */
   signal?: AbortSignal;
+  /**
+   * Attach AI-touch provenance (ADR-0009) to a path the skill just wrote.
+   *
+   * Skills that mutate the filesystem (file.write, file.edit, future
+   * file.move, etc.) MUST call this after a successful write and BEFORE
+   * returning to the model. It writes the xattr AND emits the
+   * `provenance.attach` JSONL entry. Failure to attach (e.g. fs without
+   * xattr support) is logged but non-fatal.
+   *
+   * Skills that only read should NOT call this.
+   *
+   * Returns the structured provenance record (or undefined if the runtime
+   * has no provenance binder wired — e.g. unit tests).
+   */
+  attachProvenance?: (absPath: string) => Promise<ProvenanceAttachResult | undefined>;
+}
+
+/** Mirror of what `attachProvenance` returns so callers can include in meta. */
+export interface ProvenanceAttachResult {
+  ok: boolean;
+  error?: string;
+  /** The compact form actually written to xattr. */
+  xattr: Record<string, unknown>;
 }
 
 export interface SkillResult {

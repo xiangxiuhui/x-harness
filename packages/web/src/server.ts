@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import { listSessions, readSession } from '@x_harness/memory';
 import { loadTerritory } from '@x_harness/core';
 import type { SkillRegistry } from '@x_harness/skills';
+import { trace as traceProvenance } from '@x_harness/provenance';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -136,6 +137,17 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
       path: s.dir,
     }));
     return sendJson(res, 200, { skills: rows });
+  }
+  if (p === '/api/trace' && req.method === 'GET') {
+    const qpath = url.searchParams.get('path') ?? '';
+    if (!qpath) return sendJson(res, 400, { error: 'path query param required' });
+    const abs = qpath.startsWith('/') ? qpath : resolve(process.cwd(), qpath);
+    try {
+      const r = traceProvenance(abs);
+      return sendJson(res, 200, { path: abs, ...r });
+    } catch (e) {
+      return sendJson(res, 500, { error: (e as Error).message });
+    }
   }
 
   // ── Static ──────────────────────────────────────────────────────────────

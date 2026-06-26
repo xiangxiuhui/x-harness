@@ -89,3 +89,50 @@ crates/
 5. **没有 timeout / max-output 之外的 sandbox** — shell.run 物理上还是 `/bin/sh -lc` 全权
 6. **provider 只有 deepseek** — 没多家、没本地模型
 7. **没有 UI** — 多 UI 一致性这件事还没机会验证
+
+---
+
+## 2026-06-26 晚 spiral 2/2a v0 — Provenance watermark 落地
+
+### 做了什么
+
+- `@x_harness/provenance` TS 包：`writeAiTouch / readAiTouch / removeAiTouch / trace / summarize`
+  - 后端：macOS `xattr(1)` + Linux `setfattr/getfattr`，Windows 显式不支持
+  - 兜底：fs 不支持 xattr 时返回 `{ ok:false, error }`，**不抛**
+- `Session` 引擎：
+  - `pushUser` 跟踪 `humanTurnOrdinal` 与 `lastHumanMessage`（截断 500 字）
+  - 新增 `provenance: { xHarnessHome }` opt
+  - 在 skill 调用现场注入 `ctx.attachProvenance(absPath)` binder
+  - 新增 `MemorySink.onProvenanceAttach`，写入 JSONL `provenance.attach` 条目
+- `builtin/file.write`：写盘成功后调用 `ctx.attachProvenance?.(full)`，把 xattr 与 JSONL 同步绑定
+- `x trace <path> [--json]`：CLI 子命令，读 xattr → resolve 进 JSONL → 打印 executor / autonomy / 原始人类提示 / 会话 id
+- `GET /api/trace?path=` + Web `#/trace` 视图：与 CLI 完全同源（同一个 `trace()` loader）
+- `MemoryEntryKind` 新增 `provenance.attach`，replay digest 同步
+
+### 与 Rust 计划的关系（ADR-0001 微调）
+
+本机当前**没有 cargo 工具链**，强行引入会把"零依赖运行"破掉；ADR-0009 也已写明
+"JSONL = source of truth, xattr = forward index"。本期决定：
+- **shell-out 到 OS xattr CLI** 作为内核占位；
+- `crates/x_kernel` 保留作为架构缝；
+- 真正写 Rust 的触发条件是：批量/性能/跨 OS 抽象需要原生 syscall（phase ∞）。
+- 此后切换 binding 时 `@x_harness/provenance` 公共 API 不变（替换 `XattrOps` 即可）。
+
+### 端到端跑通
+
+`packages/cli/scripts/e2e-provenance.ts` 全绿：
+```
+xattr   : [...] skill:file.write (human-implied) sess=sess-e2e seq=1
+full    : sess-e2e | human-implied | please make a hello note in $HOME
+JSONL kinds: [ 'user.message', 'provenance.attach' ]
+ALL CHECKS PASS ✅
+```
+CLI `x trace <path>` 与 Web `GET /api/trace` 输出语义一致（Surface Parity 守住）。
+
+### 已知 v0 边界（spiral 2/2b+ 处理）
+
+1. **autonomy 启发式简陋**：当前只有 "human-implied" / "model-self-initiated" 两个落点；
+   "human-instructed" 与 "model-elaborated" 需要消息—动作语义对齐，留 spiral 2/2b。
+2. **`originatingHumanMessageSeq` 用 ordinal 近似真实 JSONL seq**：JSONL 里没存 seq 字段，trace 反向查找按 path 匹配 `provenance.attach` 条目即可，影响很小。
+3. **builtin/file.write 之外的写动作**（`shell.run` 中的 echo > x、未来的 `file.edit`）尚未挂 provenance hook：等 file.edit 落地一并处理。
+4. **xattr 在跨 fs 传输会丢**：JSONL 是真源，可恢复。

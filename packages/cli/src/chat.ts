@@ -211,6 +211,12 @@ export async function runChat(args: string[]): Promise<number> {
         kind: 'tool.result',
         payload: p,
       }),
+    onProvenanceAttach: (p) =>
+      store.append({
+        actor: { kind: 'system', subsystem: 'provenance' },
+        kind: 'provenance.attach',
+        payload: p,
+      }),
   };
 
   const docSkills = registry.docSkills().filter((s) => s.source !== 'builtin');
@@ -230,6 +236,7 @@ export async function runChat(args: string[]): Promise<number> {
     memory: memorySink,
     resumeMessages,
     sessionId: store.filePath.split('/').slice(-1)[0]!.replace(/\.jsonl$/, ''),
+    provenance: { xHarnessHome },
   });
 
   const skillNames = registry.executable().map((s) => s.frontmatter.name);
