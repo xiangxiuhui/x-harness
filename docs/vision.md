@@ -2,6 +2,24 @@
 
 > 北极星目标：让 x_harness 成为一台 PC（以及它能通过网络触达的一切）的 **AI 操作系统**。
 
+## 0. North Star — x_harness IS the OS
+
+x_harness 的**终局不是寄居在 macOS / Linux / Windows 上的 AI 工具，是取代它们的 AI 操作系统**。
+
+当那天到来：
+
+- 整个内核都在 AI 手里
+- 所有 syscall / inode / process / network packet 都是 AI 的事件流
+- 人类的所有操作（点 Finder、开浏览器、改配置、外设输入）直接进入 AI 的感知
+- **没有 "AI 看不到的角落"**
+
+今天我们寄居在宿主 OS 是因为 entitlement / ecosystem / hardware lock-in，**不是终态**。
+
+**所有过渡期设计都必须满足**：phase ∞ 到来时，这段代码不能成为反向兼容包袱。具体地：
+- xattr / JSONL audit / territory zones 这些 schema → phase ∞ 的内核事件流是它们的超集
+- 不为短期方便采用"只有寄居态有意义"的抽象
+- 任何寄居态的折衷（巡逻 vs 实时审计，xattr vs 全息事件流）都标注 phase ∞ 替代物
+
 ## 1. 我们要做的不是什么
 
 - ❌ 不是 IDE 插件

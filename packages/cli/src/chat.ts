@@ -6,9 +6,12 @@ import { stdin, stdout, stderr } from 'node:process';
 import {
   Session,
   actorBadge,
+  loadTerritory,
+  buildTerritoryAddendum,
   type ConfirmDangerHandler,
   type DangerConfirmation,
   type MemorySink,
+  type TerritorySummary,
 } from '@x_harness/core';
 import { createDeepSeekProviderFromEnv } from '@x_harness/provider';
 import { buildSkillRegistry, type Skill } from '@x_harness/skills';
@@ -98,6 +101,10 @@ export async function runChat(args: string[]): Promise<number> {
 
   const registry = buildSkillRegistry({ repoRoot });
 
+  // ADR-0010 — load (or generate default) territory config; emit banner +
+  // system-prompt addendum so the model knows its authorized perimeter.
+  const territory = loadTerritory({ xHarnessHome });
+
   const dangerEngine = new DangerEngine();
   const dangerContext = defaultDangerContext({
     xHarnessHome,
@@ -148,6 +155,17 @@ export async function runChat(args: string[]): Promise<number> {
         xHarnessHome,
       },
     });
+    // ADR-0010 — record territory authorization snapshot for this session.
+    await store.append({
+      actor: { kind: 'system', subsystem: 'territory' },
+      kind: 'territory.loaded',
+      payload: {
+        path: territory.path,
+        version: territory.version,
+        zones: territory.zonePaths,
+        generatedDefault: territory.generatedDefault,
+      },
+    });
   }
 
   const memorySink: MemorySink = {
@@ -196,7 +214,8 @@ export async function runChat(args: string[]): Promise<number> {
   };
 
   const docSkills = registry.docSkills().filter((s) => s.source !== 'builtin');
-  const systemPrompt = DEFAULT_SYSTEM_PROMPT + skillsAddendum(docSkills);
+  const systemPrompt =
+    DEFAULT_SYSTEM_PROMPT + buildTerritoryAddendum(territory) + skillsAddendum(docSkills);
 
   const session = new Session({
     provider,
@@ -215,11 +234,15 @@ export async function runChat(args: string[]): Promise<number> {
 
   const skillNames = registry.executable().map((s) => s.frontmatter.name);
   const docNames = docSkills.map((s) => s.frontmatter.name);
+  const territoryNote = territory.generatedDefault
+    ? `${YELLOW}created default${RESET}`
+    : `${territory.zonePaths.length} zone(s)`;
   stdout.write(
     `\n${actorBadge(session.humanActor)} ↔ ${actorBadge(session.modelActor)}\n` +
       `(session ${session.id})\n` +
       `(tools: ${skillNames.join(', ') || '<none>'})\n` +
       `(doc-skills: ${docNames.join(', ') || '<none>'})\n` +
+      `(territory: ${territoryNote}, ${territory.path})\n` +
       `(guard: ADR-0005, home=${xHarnessHome})\n` +
       `(commands: exit | /skills | /help    keys: Ctrl+C aborts reply, Ctrl+D exits)\n\n`,
   );

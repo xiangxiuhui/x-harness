@@ -100,6 +100,8 @@ export function digestEntry(e: MemoryEntry): string {
       return `[${t}] ${actorBadge} ← ${e.payload.name}${e.payload.error ? ' ERR' : ''}${e.payload.blocked ? ' BLOCKED' : ''}  ${oneLine(e.payload.output, 80)}`;
     case 'session.end':
       return `[${t}] ── session end (${e.payload.reason}, ${e.payload.turns} turns)`;
+    case 'territory.loaded':
+      return `[${t}] sys:territory loaded ${e.payload.zones.length} zone(s)${e.payload.generatedDefault ? ' (default created)' : ''}`;
   }
 }
 

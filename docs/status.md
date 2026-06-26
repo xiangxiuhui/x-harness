@@ -12,6 +12,7 @@
 | 2026-06-25 下午 | 真实世界 `anthropics/skills/pdf` 测试 → 暴露认知错误：skill ≠ tool；它是 filesystem doc，按 progressive disclosure 三级加载 |
 | 2026-06-25 下午 | ADR-0008 Accepted；ADR-0007 Superseded（stdio runtime 降级为 opt-in `expose_as_tool: true`）|
 | 2026-06-25 下午 | greet 重写为 anthropic 标准形态（SKILL.md body + scripts/greet.sh，无 handler）|
+| 2026-06-26 下午 | spiral 2/2 范围审视：写下 ADR-0009 (Intent Provenance) + ADR-0010 (World Awareness) + vision.md North Star 段；落地 territory.yaml 默认配置 + loader |
 
 这是螺旋开发的正确暴露——错误前提通过真实使用浮出水面，回退一个 commit 远比堆十个 commit 在错的假设上便宜。
 

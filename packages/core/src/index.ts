@@ -11,3 +11,4 @@
 export * from './actor.js';
 export * from './session.js';
 export * from './bus.js';
+export * from './territory.js';

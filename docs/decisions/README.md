@@ -14,6 +14,8 @@
 | [0006](0006-skill-plugin-form.md) | Skill / Plugin 形态对齐 claude-code 五件套 | Accepted |
 | [0007](0007-skill-runtime-form.md) | Skill 脚本运行时形态（Node spawn，按扩展名分发） | **Superseded by 0008** (mechanism retained as opt-in) |
 | [0008](0008-skill-loading-per-agentskills.md) | Skill loading per agentskills.io（skill = doc, not tool） | Accepted |
+| [0009](0009-intent-provenance.md) | Intent Provenance & AI-touch watermark | Accepted |
+| [0010](0010-world-awareness.md) | World Awareness Strategy (Patrol + Territory) | Accepted (schema); impl = spiral 2/2b |
 
 ## ADR 模板
 
