@@ -4,16 +4,25 @@
 # Usage (远程，推荐):
 #   curl -fsSL https://raw.githubusercontent.com/xiangxiuhui/x-harness/main/install.sh | bash
 #
-# 或带参数（自定义安装目录、跳过 alias）：
-#   curl -fsSL https://raw.githubusercontent.com/xiangxiuhui/x-harness/main/install.sh | bash -s -- --dir ~/x_harness --no-alias
+# 带参数：
+#   ... | bash -s -- --dir ~/x_harness --no-alias --reset-runtime
+#
+# 参数：
+#   --dir <path>        源码目录（默认 ~/.x_harness-src）
+#   --runtime <path>    运行时目录（默认 ~/.x_harness），仅用于检测，installer 默认不动
+#   --branch <name>     分支（默认 main）
+#   --no-alias          不写 alias 到 shell rc
+#   --reset-runtime     备份并清空运行时目录（应急用，会保留 .bak.<时间戳>）
 #
 # 行为：
-#   1. 检查 git / node>=20 / pnpm（缺啥提示装啥）
-#   2. clone 到 $INSTALL_DIR（默认 ~/.x_harness-src），已存在则 git pull
-#   3. pnpm install + typecheck
-#   4. 把 .env.example 复制成 .env（如果不存在）
-#   5. 默认追加 `alias x='...'` 到当前 shell rc（除非 --no-alias）
-#   6. 打印下一步操作
+#   1. 检查 git / node>=20 / pnpm（缺啥提示装啥；pnpm 自动用 corepack 启用）
+#   2. 探测运行时目录（session 数 / territory / 体积），默认不动
+#   3. 区分模式：
+#      - new install：$INSTALL_DIR 不存在 → git clone
+#      - upgrade：$INSTALL_DIR 已是 git 仓库 → 记下旧 HEAD → rm -rf → re-clone
+#                 .env 自动备份/恢复，结束展示 old→new commit 和 diff stat
+#   4. pnpm install + typecheck
+#   5. 默认追加 `alias x='...'` 到 shell rc（除非 --no-alias）
 
 # 已知陷阱：macOS 自带 /bin/bash 是 3.2.57，对 `set -u` 严格模式 + 某些参数展开
 # 不友好。这里用 `set -eo pipefail`（不带 -u），并对可能未初始化的变量统一
@@ -23,17 +32,21 @@ set -eo pipefail
 # ── defaults ─────────────────────────────────────────────────────────────
 REPO_URL="${X_HARNESS_REPO:-https://github.com/xiangxiuhui/x-harness.git}"
 INSTALL_DIR="${X_HARNESS_DIR:-$HOME/.x_harness-src}"
+RUNTIME_DIR="${X_HARNESS_HOME:-$HOME/.x_harness}"
 ADD_ALIAS=1
 BRANCH="${X_HARNESS_BRANCH:-main}"
+RESET_RUNTIME=0
 
 # ── flags ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dir)       INSTALL_DIR="$2"; shift 2 ;;
-    --branch)    BRANCH="$2"; shift 2 ;;
-    --no-alias)  ADD_ALIAS=0; shift ;;
+    --dir)            INSTALL_DIR="$2"; shift 2 ;;
+    --runtime)        RUNTIME_DIR="$2"; shift 2 ;;
+    --branch)         BRANCH="$2"; shift 2 ;;
+    --no-alias)       ADD_ALIAS=0; shift ;;
+    --reset-runtime)  RESET_RUNTIME=1; shift ;;
     --help|-h)
-      grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -25
+      grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -30
       exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
@@ -89,37 +102,87 @@ fi
 ok "pnpm $(pnpm -v)"
 ok "git $(git --version | awk '{print $3}')"
 
-# ── clone / update ───────────────────────────────────────────────────────
-step "获取源码 → $INSTALL_DIR"
+# ── runtime data detection ──────────────────────────────────────────────
+# ~/.x_harness 是运行时数据目录（session JSONL / territory.yaml / skills /
+# .env 可能也在这里以后）。它的内容是用户的劳动成果，installer 绝不能默认动它。
+step "检查运行时数据 $RUNTIME_DIR"
 
-# 提示：~/.x_harness（运行时数据：sessions JSONL、territory、skills）和
-# $INSTALL_DIR（源码：可重装）是**两个完全不同的目录**。
-# installer 只管源码目录，永远不动 ~/.x_harness。
-if [[ -d "$HOME/.x_harness" ]]; then
-  ok "检测到运行时数据 ~/.x_harness（installer 不会动它）"
+if [[ -d "$RUNTIME_DIR" ]]; then
+  RT_SESSIONS=0
+  if [[ -d "$RUNTIME_DIR/memory" ]]; then
+    RT_SESSIONS=$(find "$RUNTIME_DIR/memory" -maxdepth 1 -name 'sess-*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+  fi
+  RT_SIZE=$(du -sh "$RUNTIME_DIR" 2>/dev/null | awk '{print $1}')
+  RT_TERRITORY="无"
+  [[ -f "$RUNTIME_DIR/territory.yaml" ]] && RT_TERRITORY="有（territory.yaml）"
+  ok "运行时已存在：${RT_SESSIONS} 个 session、territory ${RT_TERRITORY}、占用 ${RT_SIZE}"
+
+  if [[ "${RESET_RUNTIME:-0}" -eq 1 ]]; then
+    warn "--reset-runtime 已传入：运行时目录将被备份后清空"
+    BACKUP_DIR="$RUNTIME_DIR.bak.$(date +%Y%m%d-%H%M%S)"
+    mv "$RUNTIME_DIR" "$BACKUP_DIR"
+    ok "已搬到 $BACKUP_DIR（可手动恢复 / 删除）"
+  else
+    ok "installer 不会动它（如需重置：加 --reset-runtime）"
+  fi
+else
+  ok "运行时目录尚未生成（首次 \`x chat\` 会自动创建）"
 fi
 
-# 安装目录归 installer 全管：策略 = 删了重 clone。
-# 例外：如果安装目录里有 `.env`（含 API key），先备份到 /tmp，clone 完再放回。
-if [[ -d "$INSTALL_DIR" || -e "$INSTALL_DIR" ]]; then
-  if [[ ! -d "$INSTALL_DIR/.git" && -e "$INSTALL_DIR" ]]; then
-    die "$INSTALL_DIR 已存在但不是 git 仓库；移走再试，或用 --dir 换个目录"
-  fi
-  warn "目录已存在，删除后重新 clone（最干净）"
-  ENV_BACKUP=""
-  if [[ -f "$INSTALL_DIR/.env" ]]; then
-    ENV_BACKUP="$(mktemp -t x_harness_env.XXXXXX)"
-    cp "$INSTALL_DIR/.env" "$ENV_BACKUP"
-    ok "已备份 .env → $ENV_BACKUP（clone 完会自动放回）"
-  fi
+# ── new install vs. upgrade ──────────────────────────────────────────────
+# 显式区分两条路径：
+#   - new:     $INSTALL_DIR 不存在 → 直接 clone
+#   - upgrade: $INSTALL_DIR 已是 git 仓库 → 记下旧 HEAD，rm -rf 重 clone，
+#              展示 old→new commit + 改了几个文件
+MODE=""
+OLD_HEAD=""
+OLD_HEAD_FULL=""
+
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+  MODE="upgrade"
+  OLD_HEAD="$(git -C "$INSTALL_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  OLD_HEAD_FULL="$(git -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null || echo)"
+  step "升级源码 → $INSTALL_DIR  (旧版 $OLD_HEAD)"
+elif [[ -e "$INSTALL_DIR" ]]; then
+  die "$INSTALL_DIR 已存在但不是 git 仓库；移走再试，或用 --dir 换个目录"
+else
+  MODE="new"
+  step "新装源码 → $INSTALL_DIR"
+fi
+
+ENV_BACKUP=""
+if [[ "$MODE" == "upgrade" && -f "$INSTALL_DIR/.env" ]]; then
+  ENV_BACKUP="$(mktemp -t x_harness_env.XXXXXX)"
+  cp "$INSTALL_DIR/.env" "$ENV_BACKUP"
+  ok "已备份 .env"
+fi
+
+if [[ "$MODE" == "upgrade" ]]; then
   rm -rf "$INSTALL_DIR"
 fi
+
 git clone --quiet --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+
 if [[ -n "${ENV_BACKUP:-}" && -f "$ENV_BACKUP" ]]; then
   mv "$ENV_BACKUP" "$INSTALL_DIR/.env"
   ok "已恢复 .env"
 fi
-ok "源码就位：$(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
+
+NEW_HEAD="$(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
+
+if [[ "$MODE" == "upgrade" ]]; then
+  if [[ -n "$OLD_HEAD_FULL" && "$OLD_HEAD_FULL" == "$(git -C "$INSTALL_DIR" rev-parse HEAD)" ]]; then
+    ok "已经是最新：$NEW_HEAD（无变化）"
+  else
+    ok "升级完成：$OLD_HEAD → $NEW_HEAD"
+    if [[ -n "$OLD_HEAD_FULL" ]] && git -C "$INSTALL_DIR" cat-file -e "${OLD_HEAD_FULL}^{commit}" 2>/dev/null; then
+      DIFF_STAT="$(git -C "$INSTALL_DIR" diff --shortstat "$OLD_HEAD_FULL" HEAD 2>/dev/null || echo)"
+      [[ -n "$DIFF_STAT" ]] && say "  变更：$DIFF_STAT"
+    fi
+  fi
+else
+  ok "新装完成：$NEW_HEAD"
+fi
 
 # ── install deps ─────────────────────────────────────────────────────────
 step "pnpm install"
