@@ -222,7 +222,10 @@ installer_mode: $MODE
 VEOF
 ok "已写 $X_HOME/VERSION"
 
-# ── alias ────────────────────────────────────────────────────────────────
+# ── shell function (not alias) ───────────────────────────────────────────
+# 为什么是 function 不是 alias：
+# alias x='(cd ... && pnpm -s x)' 展开后是 `(cd ... && pnpm -s x) version` —
+# zsh 见到 subshell 括号后接位置参数会 parse error。function 用 "$@" 干净。
 if [[ "${ADD_ALIAS:-0}" -eq 1 ]]; then
   step "配置 \`x\` 命令"
   SHELL_NAME="$(basename "${SHELL:-bash}")"
@@ -238,59 +241,113 @@ if [[ "${ADD_ALIAS:-0}" -eq 1 ]]; then
     SHELL_NAME="zsh"
   fi
 
-  ALIAS_LINE="alias x='(cd \"$SRC_DIR\" && pnpm -s x)'"
-  if [[ "$SHELL_NAME" == "fish" ]]; then
-    ALIAS_LINE="alias x '(cd \"$SRC_DIR\" && pnpm -s x) ;'"
-  fi
   MARK="# >>> x_harness >>>"
   END_MARK="# <<< x_harness <<<"
 
-  if [[ -n "${RC:-}" && -f "$RC" ]] && grep -qF "$MARK" "$RC"; then
-    # 检测旧 alias 指向 ~/.x_harness-src，若是则改写
-    if grep -qF ".x_harness-src" "$RC"; then
+  # 期望的 block 内容（多行，function 形态）
+  if [[ "$SHELL_NAME" == "fish" ]]; then
+    BLOCK_BODY="function x
+    pushd \"$SRC_DIR\" >/dev/null
+    pnpm -s x \$argv
+    set -l rc \$status
+    popd >/dev/null
+    return \$rc
+end"
+  else
+    # zsh / bash 通用 function
+    BLOCK_BODY="x() {
+  ( cd \"$SRC_DIR\" && pnpm -s x \"\$@\" )
+}"
+  fi
+
+  if [[ -n "${RC:-}" ]]; then
+    mkdir -p "$(dirname "$RC")"
+    touch "$RC"
+
+    # 如果存在旧 x_harness block（不论里面是什么），整段删掉重写。
+    # 这样以前装过 alias 形式的（broken）会自动升级到 function 形式。
+    if grep -qF "$MARK" "$RC"; then
       cp "$RC" "$RC.x_harness-backup"
-      # 删除旧块
       awk -v mark="$MARK" -v end="$END_MARK" '
         $0==mark { skip=1; next }
         $0==end  { skip=0; next }
         !skip
       ' "$RC.x_harness-backup" > "$RC"
-      printf '\n%s\n%s\n%s\n' "$MARK" "$ALIAS_LINE" "$END_MARK" >> "$RC"
-      ok "alias 已从旧路径 ~/.x_harness-src 更新到 $SRC_DIR"
-    else
-      ok "alias 已在 $RC，跳过"
+      ok "已移除旧 x_harness 块（备份在 $RC.x_harness-backup）"
     fi
-  elif [[ -n "${RC:-}" ]]; then
-    mkdir -p "$(dirname "$RC")"
-    touch "$RC"
+
     {
       echo ""
       echo "$MARK"
-      echo "$ALIAS_LINE"
+      echo "$BLOCK_BODY"
       echo "$END_MARK"
     } >> "$RC"
-    ok "已写入 $RC（重开 shell 或 \`source $RC\` 生效）"
+    ok "已写入 $RC"
+    # 自动 source 让当前 shell 立刻可用
+    if [[ -n "${RC:-}" ]] && source "$RC" 2>/dev/null; then
+      ok "已自动 source $RC，`x` 命令现在可用"
+    else
+      ok "请重开终端或 \`source $RC\` 让 \`x\` 生效"
+    fi
   else
-    warn "未识别的 shell ($SHELL_NAME)，请手动加 alias："
-    printf '  %s\n' "$ALIAS_LINE"
+    warn "未识别的 shell ($SHELL_NAME)，请手动加 function："
+    printf '%s\n' "$BLOCK_BODY"
+  fi
+
+  # 清理旧的 ~/.x_harness-src 残留（如果之前迁移过但还存在）
+  if [[ -e "$HOME/.x_harness-src" && ! -L "$HOME/.x_harness-src" ]]; then
+    warn "检测到旧目录 ~/.x_harness-src 仍存在（已不再使用，可手动删除）"
   fi
 fi
 
+# ── .env health check ────────────────────────────────────────────────────
+ENV_OK=0
+ENV_STATUS_MSG=""
+if [[ -f "$SRC_DIR/.env" ]]; then
+  # 提取 DEEPSEEK_API_KEY（去 export 前缀、去引号）
+  KEY_VAL="$(awk -F= '
+    /^[[:space:]]*(export[[:space:]]+)?DEEPSEEK_API_KEY[[:space:]]*=/ {
+      sub(/^[^=]*=[[:space:]]*/, "")
+      gsub(/^["'"'"']|["'"'"']$/, "")
+      print
+      exit
+    }
+  ' "$SRC_DIR/.env" 2>/dev/null)"
+
+  if [[ -z "${KEY_VAL:-}" || "$KEY_VAL" == "your-key-here" || "$KEY_VAL" == "sk-..." || "$KEY_VAL" == "<your-key>" || "$KEY_VAL" == "sk-your-key-here" || "$KEY_VAL" == *"your-key"* || "$KEY_VAL" == *"YOUR_KEY"* ]]; then
+    ENV_OK=0
+    ENV_STATUS_MSG="DEEPSEEK_API_KEY 还没填（编辑 $SRC_DIR/.env）"
+  else
+    ENV_OK=1
+    # 显示 key 的脱敏形式
+    KEY_PREFIX="${KEY_VAL:0:6}"
+    ENV_STATUS_MSG="DEEPSEEK_API_KEY 已配置（${KEY_PREFIX}***）"
+  fi
+else
+  ENV_STATUS_MSG=".env 不存在"
+fi
+step "配置检查"
+if [[ "$ENV_OK" -eq 1 ]]; then
+  ok "$ENV_STATUS_MSG"
+else
+  warn "$ENV_STATUS_MSG"
+fi
+
 # ── done ─────────────────────────────────────────────────────────────────
-cat <<EOF
+printf '\n%s%s✅ 完成。%s\n\n' "$GREEN" "$BOLD" "$RESET_C"
 
-${GREEN}${BOLD}✅ 完成。${RESET_C}
-
-${BOLD}下一步：${RESET_C}
-  1. ${CYAN}填 API key${RESET_C}：编辑 ${DIM}$SRC_DIR/.env${RESET_C}，填 DEEPSEEK_API_KEY
-  2. ${CYAN}让 \`x\` 生效${RESET_C}：重开终端或 \`source\` 你的 shell rc
-  3. ${CYAN}开始用${RESET_C}：
-       ${BOLD}x version${RESET_C}              # 自检
-       ${BOLD}x chat${RESET_C}                  # 进入对话
-       ${BOLD}x web${RESET_C}                   # 启动本地 Web UI
-
-${DIM}总目录：$X_HOME（删它就是彻底卸载）
-文档：$SRC_DIR/docs/user-guide.md
-重装/升级：curl -fsSL https://raw.githubusercontent.com/xiangxiuhui/x-harness/main/install.sh | bash${RESET_C}
-
-EOF
+printf '%s下一步：%s\n' "$BOLD" "$RESET_C"
+STEP=1
+if [[ "$ENV_OK" -ne 1 ]]; then
+  printf '  %d. %s填 API key%s：编辑 %s%s/.env%s，填 DEEPSEEK_API_KEY\n' \
+    "$STEP" "$CYAN" "$RESET_C" "$DIM" "$SRC_DIR" "$RESET_C"
+  STEP=$((STEP + 1))
+fi
+printf '  %d. %s开始用%s：\n' "$STEP" "$CYAN" "$RESET_C"
+printf '       %sx version%s              # 自检（应输出 x_harness 0.0.1）\n' "$BOLD" "$RESET_C"
+printf '       %sx chat%s                  # 进入对话\n' "$BOLD" "$RESET_C"
+printf '       %sx web%s                   # 启动本地 Web UI\n' "$BOLD" "$RESET_C"
+printf '\n'
+printf '%s总目录：%s（删它就是彻底卸载）\n' "$DIM" "$X_HOME"
+printf '文档：%s/docs/user-guide.md\n' "$SRC_DIR"
+printf '重装/升级：curl -fsSL https://raw.githubusercontent.com/xiangxiuhui/x-harness/main/install.sh | bash%s\n\n' "$RESET_C"
