@@ -93,10 +93,19 @@ ok "git $(git --version | awk '{print $3}')"
 step "获取源码 → $INSTALL_DIR"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
-  warn "目录已存在，执行 git pull"
-  git -C "$INSTALL_DIR" fetch --quiet origin "$BRANCH"
-  git -C "$INSTALL_DIR" checkout --quiet "$BRANCH"
-  git -C "$INSTALL_DIR" pull --quiet --ff-only origin "$BRANCH"
+  warn "目录已存在，强制同步到 origin/$BRANCH"
+  # 安装目录应当由脚本管理；若有本地改动，自动 stash 到一个带时间戳的 ref，
+  # 然后 hard reset。这样不会丢数据（stash 可恢复），又能保证幂等。
+  if ! git -C "$INSTALL_DIR" diff --quiet 2>/dev/null || \
+     ! git -C "$INSTALL_DIR" diff --cached --quiet 2>/dev/null; then
+    STASH_TAG="x_harness-installer-$(date +%Y%m%d-%H%M%S)"
+    warn "检测到本地未提交改动，自动 stash 为：$STASH_TAG"
+    git -C "$INSTALL_DIR" stash push --include-untracked -m "$STASH_TAG" >/dev/null 2>&1 || true
+    warn "  恢复方式：cd $INSTALL_DIR && git stash list"
+  fi
+  git -C "$INSTALL_DIR" fetch --quiet --depth 1 origin "$BRANCH"
+  git -C "$INSTALL_DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
+  git -C "$INSTALL_DIR" reset --hard --quiet "origin/$BRANCH"
 elif [[ -e "$INSTALL_DIR" ]]; then
   die "$INSTALL_DIR 已存在但不是 git 仓库；移走再试，或用 --dir 换个目录"
 else
