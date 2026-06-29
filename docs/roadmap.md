@@ -45,7 +45,7 @@
 
 ---
 
-## 螺旋 2：actor 落 OS + UI + 进化采集（**当前**）
+## 螺旋 2：actor 落 OS + UI + 进化采集（**已 close 2026-06-29**）
 
 > 目标：让 actor 标签变成系统级**硬约束**；让审计流水**人类看得到**；开始**收集进化原料**。
 
@@ -93,9 +93,11 @@
 
 ### 2.6 验收标准（自检）
 - ~~装一个 user-level skill (`~/.x_harness/skills/my-thing/`) 能被模型实际调用~~ ✅ (2.1 done)
-- 跑一次 `x chat`，文件创建时能用 `xattr com.x_harness.actor <file>` 读到 `model:deepseek:...`
-- 同一会话同时开 cli + 浏览器 UI，两边看到完全一致的事件流（多 UI 一致性 §4）
-- UI 上点"这步不对"能写出一条 evolution 记录
+- ~~跑一次 `x chat`，文件创建时能用 `xattr com.x_harness.actor <file>` 读到 `model:deepseek:...`~~ ✅ (2.2b done — file.write **和** shell.run 重定向两条路径都打 xattr)
+- ~~同一会话同时开 cli + 浏览器 UI，两边看到完全一致的事件流~~ ✅ (2.3 done — Surface Parity, ADR-0011)
+- ~~UI 上点"这步不对"能写出一条 evolution 记录~~ ✅ (2.4 done)
+
+**4/4 → 螺旋 2 close. 下一程候选见 ADR-0001 amendment + roadmap §3。**
 
 ---
 

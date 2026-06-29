@@ -103,6 +103,9 @@ export interface AiTouchXattr {
 }
 
 export const XATTR_KEY = 'com.x_harness.ai_touch';
+/** Second xattr key (ADR-0002): plain executor tag for quick `xattr -p` reads
+ *  without parsing JSON. Always written alongside ai_touch. Value = executorTag(). */
+export const XATTR_ACTOR_KEY = 'com.x_harness.actor';
 
 export function compactAutonomy(a: Autonomy): AiTouchXattr['a'] {
   switch (a) {

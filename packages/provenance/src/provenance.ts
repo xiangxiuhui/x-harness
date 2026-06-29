@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   XATTR_KEY,
+  XATTR_ACTOR_KEY,
   compactAutonomy,
   executorTag,
   expandAutonomy,
@@ -44,6 +45,14 @@ export function writeAiTouch(prov: IntentProvenance, ops: XattrOps = getXattrOps
   const value = JSON.stringify(compact);
   try {
     ops.set(prov.path, XATTR_KEY, value);
+    // ADR-0002 — also write a plain executor tag for fast `xattr -p` reads.
+    // If this secondary write fails, we don't fail the whole operation —
+    // the JSONL is truth, and the ai_touch key is the primary index.
+    try {
+      ops.set(prov.path, XATTR_ACTOR_KEY, compact.x);
+    } catch {
+      /* swallow: secondary index is best-effort */
+    }
     return { ok: true, xattr: compact };
   } catch (e) {
     return { ok: false, error: (e as Error).message, xattr: compact };
@@ -66,6 +75,16 @@ export function readAiTouch(path: string, ops: XattrOps = getXattrOps()): AiTouc
 /** Remove the watermark (for `x untouch <path>`). */
 export function removeAiTouch(path: string, ops: XattrOps = getXattrOps()): void {
   ops.remove(path, XATTR_KEY);
+  try {
+    ops.remove(path, XATTR_ACTOR_KEY);
+  } catch {
+    /* secondary key; ignore */
+  }
+}
+
+/** Read the secondary actor key (fast path: no JSON parse). */
+export function readActorTag(path: string, ops: XattrOps = getXattrOps()): string | undefined {
+  return ops.read(path, XATTR_ACTOR_KEY);
 }
 
 // ─── JSONL cross-reference ──────────────────────────────────────────────

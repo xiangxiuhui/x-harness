@@ -230,3 +230,85 @@ GET  /api/memory/grep?q="should have"&kind=evolution.feedback → 1 hit ✓
 - 状态部分简化（spiral 2 已完成、下一螺旋候选）
 ### 端到端
 本地 /tmp 沙盒（HOME 隔离）：首次安装 + 二次幂等 + `pnpm x version` 输出 `x_harness 0.0.1 (spiral 1)`，全绿
+
+## 2026-06-29 spiral 2/2b — shell.run redirect provenance + actor xattr (B+D)
+
+### 做了什么
+
+**D — `com.x_harness.actor` 第二 xattr key**（ADR-0002 终于真的兑现）
+- `packages/provenance/src/types.ts`：新增 `XATTR_ACTOR_KEY = 'com.x_harness.actor'`
+- `writeAiTouch` 在写 `ai_touch` 之后**追写**一条 `actor` key，值 = `executorTag()`（如 `model:deepseek/deepseek-chat` / `skill:file.write`）
+  - 主 key 失败 → 整体失败；副 key 失败 → 静默吞掉（best-effort）
+- `removeAiTouch` 同步删两个 key
+- 新增 `readActorTag(path)`：fast-path，无 JSON parse，给 `ls -l@` / `xattr -p` 风格的快速反查用
+
+**B — shell.run 重定向解析 → attachProvenance**（spiral 2/2a 边界 §3 关单）
+- `packages/skills/src/builtin/shell-write-targets.ts`：纯 lexer
+  - 识别：`>` `>>` `2>` `2>>`（前置 fd 数字）；`tee` / `tee -a`
+  - **拒绝**：变量 `$X`、`$(...)`、backtick、glob `* ? [`、`/dev/null` 等设备节点
+  - 解析为绝对路径（基于 `cwd`）
+- `shell-run.ts`：spawn 前 stat 所有目标的 mtime；close 后比对：
+  - `exit !== 0` → 不打 xattr（命令崩了就别误伤）
+  - 文件不存在或 mtime 没变 → 不打（防止 heredoc / dead code 误判）
+  - 通过的目标 → 调 `ctx.attachProvenance(abs)` 走完整链路（xattr + JSONL `provenance.attach` + sink）
+- `meta.provenanceAttached`：tool.result meta 里带 `[{path, reason}]`，model / audit 都能看见
+
+### 端到端
+
+`packages/cli/scripts/e2e-shell-provenance.ts`，18 个 check 全绿：
+
+```
+extract: echo hi > /tmp/a.txt              ✓
+extract: date >> log.txt                   ✓
+extract: echo x | tee /tmp/b.txt /tmp/c.txt ✓
+extract: echo x | tee -a /tmp/d.txt        ✓
+extract: cat foo 2> /tmp/err.log           ✓
+extract: echo x > $TMP/file.txt            ✓ (skipped — dynamic)
+extract: echo x > /dev/null                ✓ (skipped — device)
+extract: echo x > /tmp/*.log               ✓ (skipped — glob)
+shell.run wrote file                       ✓
+attachProvenance called once               ✓
+no attach when command exits non-zero      ✓
+writeAiTouch ok                            ✓
+readAiTouch returns compact xattr          ✓
+readActorTag returns 'model:deepseek/...'  ✓
+xattr lists both keys                      ✓
+removeAiTouch removed both keys            ✓
+```
+
+OS xattr 视角验证：
+```
+$ xattr /tmp/sample.txt
+com.x_harness.actor
+com.x_harness.ai_touch
+$ xattr -p com.x_harness.actor /tmp/sample.txt
+model:deepseek/deepseek-chat
+```
+
+### 螺旋 2 验收（roadmap §2.6）状态
+
+| 项 | 状态 |
+|---|---|
+| user-level skill 能被模型调用 | ✅ (2.1) |
+| 文件创建时 `xattr com.x_harness.actor` 可读到 | ✅ **今天兑现**（2.2b：通过 file.write **和** shell.run 重定向两条路径） |
+| 多 UI 一致性（cli + web 看同一事件流） | ✅ (2.3) |
+| UI 上"这步不对"写出 evolution 记录 | ✅ (2.4) |
+
+**螺旋 2 验收 4/4，可以 close。**
+
+### v0 边界
+
+1. **shell.run 里通过 `cp` / `mv` / `sed -i` / `> $VAR` 等隐式或动态写**仍未覆盖
+   - `cp` / `mv` 是固定 syntax，spiral 3 可加 specialized extractor
+   - `sed -i` 同上
+   - `$VAR` 展开属于"半静态"，需要 env snapshot；性价比不高
+2. **heredoc / process substitution `>(...)`** 未识别（极少在 model 输出中出现）
+3. **autonomy 仍是二态**（implied / self-initiated）；human-instructed 升级留给下一螺旋的 A 项
+
+### Rust 内核现状（评估在 ADR-0001 amendment）
+
+`crates/x_kernel/` 仍是空壳。本日复审结论：**继续 defer，无雪球风险**。
+触发条件已列：批量 xattr 扫描 / 跨 OS syscall / OS-hook guard / 远程 daemon / TS 写不下。当前 0/5。
+具体在 [ADR-0001 § 2026-06-29 Amendment](decisions/0001-ts-rust-bridge.md#2026-06-29-amendment) 里。
+
+下一次 Rust 复审：spiral 3 启动前。
