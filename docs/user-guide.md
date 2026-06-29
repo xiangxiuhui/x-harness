@@ -121,6 +121,13 @@ flag 速查：
 
 ### `x feedback <sessionId> <seq> <verdict> [...]`
 给某个 session 的某条 entry 留 evolution feedback（[ADR-0012](decisions/0012-evolution-capture.md)）。
+
+> **存在哪里？** —— **就在被评论那条 entry 所在的同一个 JSONL 里**，
+> `~/.x_harness/memory/<sessionId>.jsonl`，作为新的一行 append，
+> `kind = "evolution.feedback"`。没有独立的 feedback 数据库、没有 sqlite、
+> 没有别的目录。这是 ADR-0012 的关键设计：**同源 JSONL，`x memory grep` 和
+> `x sessions show` 立刻都能看到**。
+
 ```bash
 x feedback sess-abc 42 accept --note "干得漂亮"
 x feedback sess-abc 47 reject --note "不该自己去 rm"
@@ -176,6 +183,17 @@ REST（同源）：
     ├── sess-<id1>.jsonl        # session 1 的所有事件
     ├── sess-<id2>.jsonl        # session 2 ...
     └── ...
+```
+
+**没有独立的 feedback 文件 / 数据库**：feedback 事件作为 `kind: "evolution.feedback"`
+直接 append 到对应 session 的 `.jsonl`。一个真实的 feedback 行长这样：
+
+```json
+{"ts":"2026-06-29T03:21:07.091Z","seq":17,
+ "actor":{"kind":"human","userId":"xxh","surface":"feedback"},
+ "kind":"evolution.feedback",
+ "payload":{"targetSeq":2,"targetKind":"system.message",
+            "verdict":"accept","note":"looks ok in test"}}
 ```
 
 **删一个 `sess-*.jsonl` = 永久遗忘那次对话**（含 feedback、provenance 记录）。

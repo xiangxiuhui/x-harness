@@ -1,110 +1,109 @@
-# 0011 — Surface Parity (CLI ↔ Web ↔ future surfaces)
+# ADR 0011 — Surface Parity（CLI ↔ Web ↔ 未来表面）
 
 - **Status**: Accepted
 - **Date**: 2026-06-26
-- **Spirals**: 2/3 (Web UI v0)
-- **Relates to**: ADR-0002 (Actor), ADR-0006 (Memory JSONL), ADR-0009 (Provenance), ADR-0010 (World Awareness)
+- **Spirals**: 2/3（Web UI v0）
+- **Relates to**: [ADR-0002](0002-actor-tag-macos.md)（Actor）、[ADR-0006](0006-skill-plugin-form.md) / Memory JSONL、[ADR-0009](0009-intent-provenance.md)（Provenance）、[ADR-0010](0010-world-awareness.md)（World Awareness）
 
 ## Context
 
-Spiral 2/3 introduces a Web UI alongside the existing CLI. The danger: in
-most agent projects the GUI quickly grows its own state model, its own
-session store, its own quirks — and the CLI rots. We do not have the
-luxury of two divergent surfaces; this is an OS, not a SaaS dashboard.
+螺旋 2/3 在 CLI 之外加了一个 Web UI。**最常见的失败模式**是：GUI 很快长出自己的
+state model、自己的 session 仓库、自己的怪癖，CLI 开始烂掉，两个表面对"系统里
+发生了什么"渐行渐远。
 
-Phase ∞ vision (vision.md §0): when x_harness owns the kernel, there will
-be many more surfaces — voice, ambient, AR, sensors, third-party clients
-talking to the harness over a local socket. All of them MUST converge on
-the same view of "what happened in the system". A surface that lies, or
-that introduces a private notion of "session", is worse than no surface.
+我们没有这个余地——x_harness 是一台 PC 的 AI OS，不是 SaaS dashboard。
 
-## Decision: Surface Parity Rules
+phase ∞ 的视图（[vision.md §0](../vision.md)）：当 x_harness 拿到内核之后，会冒
+出**很多很多**表面：语音、ambient、AR、传感器、第三方进程通过本地 socket 跟
+harness 对话。**所有表面必须收敛到同一份"系统发生了什么"的视图**。一个会说谎、
+或者私有引入"自己的 session 概念"的表面，比没有这个表面更糟。
 
-Every surface (CLI, Web, future GUI/voice/etc.) is bound by these rules:
+## Decision：Surface Parity 七条铁律
 
-1. **Single source of truth on disk.**
-   The canonical state lives at `~/.x_harness/`:
-   - `memory/<sessionId>.jsonl` — append-only event log (ADR-0006)
-   - `memory/index.jsonl` — session header index
-   - `territory.yaml` — authorized perimeter (ADR-0010)
-   - `skills/` — installed skills (ADR-0008)
-   - (future) `evolution/`, `provenance/`, etc.
-   No surface owns a private database, cache that drifts, or in-memory
-   shadow that diverges from disk.
+任何表面（CLI、Web、未来 GUI / 语音 / 等）都要受这七条约束：
 
-2. **Surfaces are renderers, not authors of new concepts.**
-   A surface MAY render and combine; it MAY add UX affordances (live tail,
-   syntax highlight, search). It MAY NOT introduce concepts that don't
-   exist on disk or in shared packages. If a Web feature requires a new
-   concept, that concept lands first in `@x_harness/{core,memory,...}` and
-   in the CLI; only then in the Web UI.
+1. **磁盘是唯一真相源（Single source of truth on disk）。**
+   canonical state 落在 `~/.x_harness/`：
+   - `memory/<sessionId>.jsonl` — append-only 事件流（ADR-0006）
+   - `memory/index.jsonl` — session header 索引
+   - `territory.yaml` — 授权领地（ADR-0010）
+   - `skills/` — 装好的 skills（ADR-0008）
+   - （未来）`evolution/`、`provenance/` 等
+   **不允许**任何表面有私有数据库、会漂移的 cache、或者跟磁盘对不上的内存影子。
 
-3. **CLI is the canonical implementation.**
-   When a behavioural question arises ("what counts as a session end?",
-   "how is a doc-skill detected?"), the CLI's answer is the truth. Web and
-   other surfaces re-use the same loaders (`buildSkillRegistry`,
-   `loadTerritory`, `listSessions`, `readSession`, …). They MUST NOT
-   reimplement these.
+2. **表面只渲染，不发明概念。**
+   表面可以**渲染并组合**；可以加 UX 糖（live tail、语法高亮、搜索）。它
+   **不能**引入磁盘 / 共享 package 里没有的新概念。如果 Web 想要一个新概念，
+   这个概念**先**落到 `@x_harness/{core,memory,...}` 和 CLI，**之后**才能在
+   Web UI 上出现。
 
-4. **Every Web view has a CLI equivalent (and vice-versa for read views).**
-   | Web                                     | CLI equivalent                                     |
+3. **CLI 是 canonical implementation。**
+   当出现行为级歧义（"什么算 session 结束？"、"doc-skill 怎么检出？"），
+   **CLI 的回答即真理**。Web 和其他表面必须复用同一个 loader：
+   `buildSkillRegistry` / `loadTerritory` / `listSessions` / `readSession` …
+   **禁止重新实现这些**。
+
+4. **每个 Web 视图都有对应的 CLI 命令（反之亦然，对读视图而言）。**
+
+   | Web                                     | CLI 对应                                            |
    |-----------------------------------------|----------------------------------------------------|
    | `#/sessions`                            | `x sessions ls`                                    |
    | `#/sessions/:id`                        | `x sessions show <id>`                             |
-   | `#/sessions/:id/live`                   | `tail -f ~/.x_harness/memory/<id>.jsonl` (lossless)|
-   | `#/territory`                           | `cat ~/.x_harness/territory.yaml` + parsed zones   |
-   | `#/skills`                              | `/skills` (chat slash) / future `x skills ls`      |
+   | `#/sessions/:id/live`                   | `tail -f ~/.x_harness/memory/<id>.jsonl`（无损）   |
+   | `#/territory`                           | `cat ~/.x_harness/territory.yaml` + 解析后的 zones  |
+   | `#/skills`                              | `/skills` 斜杠命令 / 未来的 `x skills ls`           |
+   | `#/memory`                              | `x memory grep`                                    |
+   | `#/feedback`                            | `x feedback list`                                  |
+   | `#/sessions/:id` 上的 👍/👎/💡 按钮     | `x feedback <sess> <seq> <verdict>`                |
+   | `#/trace?path=...`                      | `x trace <path>`                                   |
 
-   Write paths (chat, approvals) live in the CLI first, Web in v1.
+   写侧（chat、approval、feedback）一律 CLI 先有，Web 在 v1 跟上。
 
-5. **Local-only by default.**
-   The web server binds `127.0.0.1` only. There is no auth in v0; the OS
-   grants this socket to your `$USER`. Any future remote surface needs a
-   separate ADR that addresses identity, encryption, and scope.
+5. **默认 local-only。**
+   web server 只 bind `127.0.0.1`。v0 没有 auth——OS 通过 `$USER` 权限把这个
+   socket 授予你。**任何要远程暴露的表面都需要一份新 ADR**，正面回答身份、
+   加密、scope 三件事。
 
-6. **Zero external runtime deps for transport.**
-   Use `node:http`, SSE, plain fetch, vanilla DOM. The OS project owns its
-   own plumbing. We will not let a pile of npm packages decide our shape.
+6. **传输层零外部 runtime 依赖。**
+   只用 `node:http`、SSE、原生 fetch、vanilla DOM。OS 项目自己管自己的管道。
+   **不能让一堆 npm 包决定我们长什么样**。
 
-7. **No proprietary IPC.**
-   Surfaces talk to the harness over (a) the JSONL files, (b) a documented
-   HTTP API mirroring shared packages. No surface-private RPC.
+7. **不搞私有 IPC。**
+   表面跟 harness 对话只有两条路：(a) JSONL 文件、(b) 镜像共享 package 的、
+   有文档的 HTTP API。**任何表面私有的 RPC 都不允许**。
 
 ## Consequences
 
-- **Pro**: surfaces stay cheap to add; behaviour cannot silently fork; the
-  audit trail (JSONL) remains the single artifact you need to reproduce
-  any conversation in any surface.
-- **Pro**: phase ∞ migration is easier — when the harness owns the kernel,
-  these same `loadTerritory`/`listSessions`/etc. functions become thin
-  wrappers over kernel APIs, and surfaces don't notice.
-- **Con**: cannot ship a Web feature that "feels nice in browser" without
-  first justifying it in the package and CLI. We accept the friction.
-- **Con**: live tail via SSE means the Web is read-after-write — if the
-  CLI hasn't flushed a JSONL line, the Web won't show it. We accept this;
-  it forces honesty (the disk is the truth).
+- **Pro**：表面便宜，行为不会暗中分叉；JSONL 仍然是"在任何表面重放任何对话"
+  唯一需要的产物。
+- **Pro**：phase ∞ 迁移变简单——当 harness 拿到内核，这些
+  `loadTerritory` / `listSessions` / 等函数会变成内核 API 之上的薄壳，
+  表面无感知。
+- **Con**：不能上线"浏览器里手感很爽"的 Web 功能而不先在 package 和 CLI
+  里给出存在性证明。**我们接受这份摩擦**。
+- **Con**：live tail 走 SSE 是 read-after-write 的——CLI 没 flush 的 JSONL
+  行，Web 看不见。**我们接受这一点**：它强制诚实（磁盘即真理）。
 
-## Implementation note (v0, this commit)
+## Implementation note（v0，当前 commit）
 
-- `@x_harness/web` — `node:http`-based server in `src/server.ts`,
-  static SPA in `public/`. Endpoints: `/api/health`, `/api/sessions`,
-  `/api/sessions/:id`, `/api/sessions/:id/tail` (SSE),
-  `/api/territory`, `/api/skills`.
-- `x web [--port N] [--host H]` — CLI subcommand; reuses the same
-  `buildSkillRegistry`/`loadTerritory`/`listSessions` as `x chat`.
-- Read-only. Chat/approval over web is deferred to v1 (post 2/2 Rust work).
+- `@x_harness/web` — 基于 `node:http` 的 server（`src/server.ts`），静态 SPA
+  在 `public/`。端点：`/api/health`、`/api/sessions`、`/api/sessions/:id`、
+  `/api/sessions/:id/tail`（SSE）、`/api/territory`、`/api/skills`。
+  spiral 2 后续追加：`/api/memory/grep`、`/api/trace`、`/api/feedback`（GET+POST）。
+- `x web [--port N] [--host H]` — CLI 子命令，复用 `x chat` 同一套
+  `buildSkillRegistry` / `loadTerritory` / `listSessions`。
+- 起步只读。聊天 / approval over web 推迟到 v1（spiral 2/2 之后）。
 
 ## Open questions
 
-- **OQ1**: When `x chat` runs in terminal A and `x web` in terminal B, the
-  Web sees `chat`'s session live via SSE. But if the user opens **two**
-  `x chat` sessions simultaneously, the Web should let them switch. v0
-  works (each session is a separate JSONL) but the UX of "which is live
-  right now" needs polish; v1 to add a per-session "active" badge driven
-  by file mtime + index.jsonl `op:start` without `op:end`.
-- **OQ2**: Should the live SSE stream also include skill/territory file
-  changes (e.g. user edits territory.yaml, banner updates)? Probably yes,
-  via a separate `/api/events` channel. Defer.
-- **OQ3**: Web v1 (write side) — POST /api/chat with provenance carrying
-  `executor=human` `surface=web`. Approval prompts will need a small
-  bidirectional channel; SSE + POST is sufficient (no WS needed).
+- **OQ1**：终端 A 跑 `x chat`、终端 B 跑 `x web`，Web 能通过 SSE 看到 A 的
+  session live。但用户**同时**开两个 `x chat`，Web 应该能切。v0 已经可以
+  （每个 session 一个 JSONL），但"哪个是当下 live"的 UX 还要打磨；v1 加
+  per-session "active" 角标，由 mtime + index.jsonl 的 `op:start` 无对应
+  `op:end` 推出。
+- **OQ2**：live SSE 流要不要也覆盖 skill / territory 文件变更（用户编了
+  territory.yaml，banner 自动刷新）？大概要，走一条独立的 `/api/events`。
+  Defer。
+- **OQ3**：Web v1（写侧）—— `POST /api/chat`，provenance 带
+  `executor=human`、`surface=web`。Approval 弹窗需要一条小的双向通道；
+  SSE + POST 足够，**不需要 WebSocket**。
