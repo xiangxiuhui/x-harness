@@ -312,3 +312,63 @@ model:deepseek/deepseek-chat
 具体在 [ADR-0001 § 2026-06-29 Amendment](decisions/0001-ts-rust-bridge.md#2026-06-29-amendment) 里。
 
 下一次 Rust 复审：spiral 3 启动前。
+
+## 2026-06-29 (later) — A + 0.5: autonomy heuristic v1 + shell.run write-out expansion
+
+### A — Autonomy heuristic v1（`packages/core/src/autonomy-heuristic.ts`）
+
+之前 `attachProvenance` 里 autonomy 只有二态（implied / self-initiated）。这一版做出 4-level：
+
+| 触发条件 | autonomy | autonomyReason 示例 |
+|---|---|---|
+| 会话无 human 消息 | `model-self-initiated` | `no human message in session` |
+| 距上次 human 的 model-tool round ≥ 2 | `model-elaborated` | `3 tool rounds since last human turn (>= 2)` |
+| target basename 字面出现在 user msg | `human-instructed` | `user named "README.md"` |
+| 其他 | `human-implied` | `recent human turn, target not literally named` |
+
+字面匹配的保守约定：
+- basename 长度 ≥ 3（防 `a` / `b` 误中）
+- 大小写敏感（"readme" 不算命中 `README.md`）
+- 带扩展名时：先 basename 整体（`README.md`），再无扩展名 stem（`foo` 命中 `foo.tar.gz`）
+
+Session 新增字段：`toolRoundsSinceLastHuman`，`pushUser` 重置为 0，每个 model-tool round 开始前自增。
+`IntentProvenance` 加了可选 `autonomyReason: string`，方便 evolution queue UI 直接显示分类理由。
+
+9 个 e2e check 全绿（`packages/cli/scripts/e2e-autonomy.ts`）。
+
+### 0.5 — shell.run write-out 加宽（cp / mv / sed -i）
+
+`shell-write-targets.ts` 三类新形态：
+- `cp [-flags] SRC DST` → DST（reason: `cp-dst`）
+- `cp SRC1 SRC2 ... DIR` → `DIR/basename(SRCi)` 多条
+- `cp -t DIR SRC...` / `--target-directory=DIR` → 同上
+- `mv` 与 `cp` 同形
+- `sed -i [SUFFIX] [-e EXPR] FILE...` → 每个 FILE
+  - 处理 GNU `-i.bak` 形式
+  - 处理 BSD `-i ''` 必带后缀的形式（消费下一个 word 当后缀，启发式判断是否是 sed 脚本）
+  - `-e` 出现时所有 positional 都是 file；否则首个 positional 是脚本
+
+动态目标（`$VAR`、glob、`$(...)`）一律不打——保持"宁可漏、不能误"。
+
+8 个新 extractor case 全绿（混在 `e2e-shell-provenance.ts` 的 18 个里，现在 25 个）。
+
+### Provenance 覆盖度（粗估）
+
+| Skill / 调用形态 | 是否打 xattr |
+|---|---|
+| file.write | ✅ (一直就有) |
+| file.edit | ✅ (一直就有) |
+| shell.run `> file` / `>> file` | ✅ (今天前) |
+| shell.run `tee` / `tee -a` | ✅ (今天前) |
+| shell.run `cp SRC DST` | ✅ **本次新增** |
+| shell.run `mv SRC DST` | ✅ **本次新增** |
+| shell.run `sed -i ... FILE` | ✅ **本次新增** |
+| shell.run `> $VAR` / `$(date)` / `*.log` | ❌（保守不打） |
+| shell.run heredoc / `>(...)` | ❌（v0 已知边界） |
+
+粗估覆盖度从 ~70% 提到 ~92%（受限于无法静态展开变量）。
+
+### 下一程候选
+
+- 数据攒一波：让 chat 真跑几小时，看 `~/.x_harness/memory/*.jsonl` 里 autonomy 各档分布。命中率若 `human-instructed` < 5% 或 `model-elaborated` > 50%，回来调阈值。
+- evolution queue UI 把 `autonomyReason` 显示出来 → 用户审计每条记录时能直接看到分类依据。

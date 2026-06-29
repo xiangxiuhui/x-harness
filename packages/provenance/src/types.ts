@@ -67,6 +67,9 @@ export interface IntentProvenance {
   executor: Executor;
   /** Autonomy level — see Autonomy type. */
   autonomy: Autonomy;
+  /** Why the heuristic picked this autonomy level. Short, audit-grade.
+   *  Optional for backward compat with v1 logs that pre-date the heuristic. */
+  autonomyReason?: string;
   /** Approval record, if a danger rule required one. */
   humanApproval?: HumanApproval;
   /** Trigger that started this session (resume / fresh / scheduled / patrol). */

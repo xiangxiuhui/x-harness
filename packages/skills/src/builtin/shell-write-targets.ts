@@ -35,7 +35,14 @@ export interface WriteTarget {
   /** Absolute, normalised path. */
   path: string;
   /** Why we think this is a write target. */
-  reason: 'redirect-truncate' | 'redirect-append' | 'tee' | 'tee-append';
+  reason:
+    | 'redirect-truncate'
+    | 'redirect-append'
+    | 'tee'
+    | 'tee-append'
+    | 'cp-dst'
+    | 'mv-dst'
+    | 'sed-i';
   /** Position in original command (debug / diagnostics). */
   index: number;
 }
@@ -284,6 +291,206 @@ export function extractWriteTargets(cmd: string, opts: ExtractOptions): WriteTar
       i = j - 1;
       continue;
     }
+
+    // ── `cp [flags] SRC... DST` / `mv [flags] SRC... DST` ────────────
+    //
+    // We trust ONLY the simple shape: positionals are clearly separated and
+    // the last word before the next op-token is DST. If user passes `-t DST`
+    // (GNU `--target-directory`) we recognise that too.
+    //
+    // We deliberately do NOT try to handle:
+    //   - DST being a directory (would need fs.stat; rounds out to a runtime
+    //     check, not a static guess) — see post-spawn mtime gate in shell-run.
+    //   - `--backup` and other side-effects.
+    //
+    // Net: for the common `cp a b` / `mv a b` we report `b` as a write
+    // target with reason `cp-dst` / `mv-dst`. The mtime gate in shell-run
+    // discards it if the file didn't actually get touched.
+    if (t.kind === 'word' && (t.value === 'cp' || t.value === 'mv')) {
+      const verb = t.value;
+      const positionals: { value: string; index: number }[] = [];
+      let targetDir: string | undefined;
+      let j = i + 1;
+      while (j < toks.length) {
+        const u = toks[j]!;
+        if (u.kind !== 'word') break;
+        if (u.value === '-t' || u.value === '--target-directory') {
+          // next word is the explicit DST directory
+          const nxt = toks[j + 1];
+          if (nxt && nxt.kind === 'word') {
+            targetDir = nxt.value;
+            j += 2;
+            continue;
+          }
+          j++;
+          continue;
+        }
+        if (u.value.startsWith('--target-directory=')) {
+          targetDir = u.value.slice('--target-directory='.length);
+          j++;
+          continue;
+        }
+        if (u.value === '--') {
+          j++;
+          continue;
+        }
+        if (u.value.startsWith('-')) {
+          j++;
+          continue;
+        }
+        positionals.push({ value: u.value, index: u.index });
+        j++;
+      }
+      i = j - 1;
+
+      const reason = verb === 'cp' ? 'cp-dst' : 'mv-dst';
+      if (targetDir !== undefined) {
+        // ALL positionals are sources; their basenames go into targetDir.
+        for (const src of positionals) {
+          const baseTok = baseOfPath(src.value);
+          if (baseTok === undefined) continue;
+          const candidate = joinTwo(targetDir, baseTok);
+          if (candidate === undefined) continue;
+          const abs = resolveTarget(candidate, opts.cwd);
+          if (abs && !seen.has(abs)) {
+            seen.add(abs);
+            out.push({ path: abs, reason, index: src.index });
+          }
+        }
+      } else if (positionals.length >= 2) {
+        const dst = positionals[positionals.length - 1]!;
+        const srcs = positionals.slice(0, -1);
+        if (srcs.length === 1) {
+          const abs = resolveTarget(dst.value, opts.cwd);
+          if (abs && !seen.has(abs)) {
+            seen.add(abs);
+            out.push({ path: abs, reason, index: dst.index });
+          }
+        } else {
+          // Multi-src means DST must be a directory — synthesise candidate
+          // paths via DST/basename(SRC). If any of the SRCs are dynamic we
+          // skip them; this is best-effort.
+          for (const src of srcs) {
+            const baseTok = baseOfPath(src.value);
+            if (baseTok === undefined) continue;
+            const candidate = joinTwo(dst.value, baseTok);
+            if (candidate === undefined) continue;
+            const abs = resolveTarget(candidate, opts.cwd);
+            if (abs && !seen.has(abs)) {
+              seen.add(abs);
+              out.push({ path: abs, reason, index: src.index });
+            }
+          }
+        }
+      }
+      continue;
+    }
+
+    // ── `sed -i [SUFFIX] EXPR FILE...` ───────────────────────────────
+    //
+    // GNU sed: `-i` takes an optional suffix glued to the flag (`-i.bak`)
+    //   or NO arg.
+    // BSD sed (macOS): `-i ''` requires a separate arg even if empty.
+    // Both: trailing positionals after the script expression are FILES,
+    // and `sed -i` mutates each of them in place.
+    //
+    // We can't reliably tell script-expr from filename without knowing if
+    // `-e` was used. Heuristic: if `-e <expr>` is present, all OTHER
+    // positionals are files. Otherwise the FIRST positional is the script
+    // expression and the rest are files.
+    if (t.kind === 'word' && t.value === 'sed') {
+      let inPlace = false;
+      let hasDashE = false;
+      const positionals: { value: string; index: number }[] = [];
+      let j = i + 1;
+      let bsdInPlaceConsumedArg = false; // track BSD `-i ''` pattern
+      while (j < toks.length) {
+        const u = toks[j]!;
+        if (u.kind !== 'word') break;
+        // `-i` or `-i<suffix>` (GNU) or `-i ''` (BSD)
+        if (u.value === '-i') {
+          inPlace = true;
+          // Peek next token: BSD style requires a backup-suffix arg.
+          // If it looks like a flag or like the script expression, leave it.
+          // We can't reliably distinguish, so we consume the next word only
+          // if it's empty string or matches /^[.\w-]*$/ (typical suffix).
+          const nxt = toks[j + 1];
+          if (
+            nxt &&
+            nxt.kind === 'word' &&
+            (nxt.value === '' || /^[.\w-]*$/.test(nxt.value)) &&
+            nxt.value !== '-e' && nxt.value !== '-E'
+          ) {
+            // ambiguous; in BSD form the suffix is mandatory but typically
+            // empty. We'll consume IF it doesn't look like a sed script
+            // (no `/`, no `s|`, no `;`).
+            if (!/[\/;]/.test(nxt.value) && !nxt.value.includes('s|')) {
+              bsdInPlaceConsumedArg = true;
+              j += 2;
+              continue;
+            }
+          }
+          j++;
+          continue;
+        }
+        if (u.value.startsWith('-i') && u.value.length > 2) {
+          inPlace = true;
+          j++;
+          continue;
+        }
+        if (u.value === '-e' || u.value === '-f' || u.value === '--expression' || u.value === '--file') {
+          if (u.value === '-e' || u.value === '--expression') hasDashE = true;
+          // skip the value too
+          j += 2;
+          continue;
+        }
+        if (u.value === '-E' || u.value === '-n' || u.value === '-r' || u.value === '-s') {
+          j++;
+          continue;
+        }
+        if (u.value === '--') {
+          j++;
+          continue;
+        }
+        if (u.value.startsWith('-')) {
+          j++;
+          continue;
+        }
+        positionals.push({ value: u.value, index: u.index });
+        j++;
+      }
+      i = j - 1;
+      void bsdInPlaceConsumedArg;
+
+      if (inPlace) {
+        const files = hasDashE ? positionals : positionals.slice(1);
+        for (const f of files) {
+          const abs = resolveTarget(f.value, opts.cwd);
+          if (abs && !seen.has(abs)) {
+            seen.add(abs);
+            out.push({ path: abs, reason: 'sed-i', index: f.index });
+          }
+        }
+      }
+      continue;
+    }
   }
   return out;
+}
+
+/** basename of a tokenised path. Returns undefined if the path itself is
+ *  too dynamic to trust (variable, command-subst, glob). */
+function baseOfPath(token: string): string | undefined {
+  if (!token) return undefined;
+  if (/\$\(|`|\$\{|[*?\[]/.test(token)) return undefined;
+  if (/(^|[^\\])\$[A-Za-z_]/.test(token)) return undefined;
+  const slash = token.lastIndexOf('/');
+  return slash < 0 ? token : token.slice(slash + 1);
+}
+
+/** Join two path tokens (DST dir + basename) without expanding either side
+ *  past what resolveTarget can already handle. */
+function joinTwo(a: string, b: string): string | undefined {
+  if (!a || !b) return undefined;
+  return a.endsWith('/') ? `${a}${b}` : `${a}/${b}`;
 }

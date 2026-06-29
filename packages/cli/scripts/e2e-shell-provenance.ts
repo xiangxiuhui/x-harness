@@ -73,6 +73,40 @@ function check(name: string, cond: boolean, detail?: string): void {
       cmd: 'echo x > /tmp/*.log',
       expect: [],
     },
+    // cp / mv / sed -i
+    {
+      cmd: 'cp /tmp/src.txt /tmp/dst.txt',
+      expect: [{ path: '/tmp/dst.txt', reason: 'cp-dst' }],
+    },
+    {
+      cmd: 'cp -r /tmp/a /tmp/b /tmp/outdir',
+      expect: [
+        { path: '/tmp/outdir/a', reason: 'cp-dst' },
+        { path: '/tmp/outdir/b', reason: 'cp-dst' },
+      ],
+    },
+    {
+      cmd: 'mv /tmp/src.txt /tmp/renamed.txt',
+      expect: [{ path: '/tmp/renamed.txt', reason: 'mv-dst' }],
+    },
+    {
+      cmd: "sed -i '' -e 's/foo/bar/g' /tmp/file.txt",
+      expect: [{ path: '/tmp/file.txt', reason: 'sed-i' }],
+    },
+    {
+      cmd: "sed -i.bak 's/x/y/' /tmp/in.conf",
+      expect: [{ path: '/tmp/in.conf', reason: 'sed-i' }],
+    },
+    // sed WITHOUT -i is not a write
+    {
+      cmd: "sed 's/x/y/' /tmp/in.conf",
+      expect: [],
+    },
+    // cp into dynamic dst → bail
+    {
+      cmd: 'cp /tmp/a $DEST',
+      expect: [],
+    },
   ];
   for (const c of cases) {
     const r = extractWriteTargets(c.cmd, { cwd });

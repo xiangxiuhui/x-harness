@@ -19,6 +19,7 @@ import { writeAiTouch } from '@x_harness/provenance';
 import type { ProvenanceAttachResult } from '@x_harness/skills';
 import { ActorBus } from './bus.js';
 import type { Actor, HumanSurface } from './actor.js';
+import { classifyAutonomy } from './autonomy-heuristic.js';
 
 export interface SessionOptions {
   provider: Provider;
@@ -159,6 +160,9 @@ export class Session {
   private lastHumanMessage?: string;
   /** Ordinal of human turns within this session, 1-based. */
   private humanTurnOrdinal = 0;
+  /** How many tool-call rounds the model has issued since the last human
+   *  message. Used by the autonomy heuristic to detect model-elaborated steps. */
+  private toolRoundsSinceLastHuman = 0;
 
   constructor(opts: SessionOptions) {
     this.id = opts.sessionId ?? `sess-${Math.random().toString(36).slice(2, 10)}`;
@@ -212,6 +216,7 @@ export class Session {
   pushUser(content: string): void {
     this.messages.push({ role: 'user', content });
     this.humanTurnOrdinal += 1;
+    this.toolRoundsSinceLastHuman = 0;
     // Truncate to keep xattr small AND avoid storing huge user messages in
     // every provenance record (full text already lives in JSONL).
     this.lastHumanMessage = content.length > 500 ? content.slice(0, 500) + '…' : content;
@@ -302,6 +307,11 @@ export class Session {
         yield { kind: 'turn.done' };
         return;
       }
+
+      // Bump per-round counter BEFORE handling tool calls so attachProvenance,
+      // invoked inside skill handlers, sees the round index of the call it's in.
+      // (round 1 = direct response to a human turn; round >= 2 = elaborated)
+      this.toolRoundsSinceLastHuman += 1;
 
       for (const call of toolCalls) {
         const skill = this.skills.get(call.name);
@@ -477,12 +487,11 @@ export class Session {
    * session state and the calling skill. Returns undefined if provenance
    * config wasn't set (caller skill ctx will see attachProvenance as undef).
    *
-   * Autonomy heuristic (v0):
-   *   - if lastHumanMessage is set within this session → `human-implied`
-   *     (we cannot reliably detect "human-instructed" without semantic
-   *     diff between the user message and the chosen action; v1 work.)
-   *   - else → `model-self-initiated`
-   * "model-elaborated" requires multi-step plan introspection; defer.
+   * Autonomy heuristic (v1, see autonomy-heuristic.ts):
+   *   - no human message yet                  → model-self-initiated
+   *   - >= 2 tool rounds since last human     → model-elaborated
+   *   - target basename literally in user msg → human-instructed
+   *   - otherwise                             → human-implied
    */
   private buildAttachProvenance(
     skillName: string,
@@ -494,7 +503,15 @@ export class Session {
     const lastMsg = this.lastHumanMessage;
     const sessionId = this.id;
     const memory = this.memory;
+    const toolRoundsSinceLastHuman = this.toolRoundsSinceLastHuman;
+    const hasHumanMessage = ordinal > 0;
     return async (absPath: string): Promise<ProvenanceAttachResult | undefined> => {
+      const cls = classifyAutonomy({
+        targetPath: absPath,
+        lastHumanMessage: lastMsg,
+        toolRoundsSinceLastHuman,
+        hasHumanMessage,
+      });
       const provenance: IntentProvenance = {
         v: 1,
         ts: new Date().toISOString(),
@@ -502,7 +519,8 @@ export class Session {
         originatingHumanMessageSeq: ordinal > 0 ? ordinal : undefined,
         originatingHumanMessage: lastMsg,
         executor: { kind: 'skill', name: skillName },
-        autonomy: ordinal > 0 ? 'human-implied' : 'model-self-initiated',
+        autonomy: cls.level,
+        autonomyReason: cls.reason,
         sessionTrigger: 'fresh',
         xHarnessHome,
         path: absPath,
