@@ -200,3 +200,20 @@ GET  /api/memory/grep?q="should have"&kind=evolution.feedback → 1 hit ✓
 1. 草稿生成（reject + i-would-have → skill draft）未做：schema 已留足空间
 2. seq 冲突理论可能（human 慢 + model 快），实际 v0 没遇到；ADR-0012 列了升级路径
 3. POST 没 CSRF：local-only 127.0.0.1 + 写入只能附加 JSONL，攻击面≈本地任意进程
+
+## 2026-06-29 清债 + 用户手册
+### 做了什么
+- 删 `packages/ui`（spiral-1 占位，已被 `packages/web` 取代）
+- 删根 `scripts/`（空目录，原 e2e-provenance.ts 已移到 `packages/cli/scripts/`）
+- 修文档 stale 路径：
+  - `docs/roadmap.md` §2.3：`packages/ui` → `packages/web`
+  - ADR-0004：同上
+  - ADR-0005：UI 路径占位改 `packages/web/public/`
+- 新写 `docs/user-guide.md`（v0.2）：完整用户手册
+  - 5 分钟跑通 / 心智模型 / CLI 全命令参考 / Web 全路由参考
+  - `~/.x_harness/` 目录结构 / territory / skills / builtins / provenance
+  - 典型工作流 4 个 / 故障排查表 / 路线图与缺口
+- README 顶部加一行指向 user-guide
+- typecheck 0 输出
+### 后续协作
+用户会在 user-guide.md 上直接改 / 留评论 / 提问，回归之后从 user-guide 校准下一步螺旋。

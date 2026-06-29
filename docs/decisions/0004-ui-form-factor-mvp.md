@@ -5,7 +5,7 @@
 
 ## Decision
 
-- 第一螺旋：CLI（packages/cli） + **本地 Web UI**（packages/ui）。
+- 第一螺旋：CLI（packages/cli） + **本地 Web UI**（packages/web，原计划名 packages/ui，实际落在 spiral 2/3）。
 - 第二螺旋及以后：Tauri 包壳 → System Super App（带托盘 / 全局快捷键 / 麦克风 / 浏览器插件协同）。
 - **第一螺旋的 Web 必须按"将来要被 Tauri 包"的方式来设计**，不能临时性。
 
@@ -27,7 +27,7 @@
 ### R2. 抽象统一的 RPC 客户端
 
 ```
-packages/ui/src/transport/
+packages/web/src/transport/
   ├─ rpc.ts          # 统一的 client interface
   ├─ http.ts         # 第一螺旋实现：fetch + SSE/WebSocket
   └─ tauri.ts        # 第二螺旋实现：@tauri-apps/api invoke
@@ -70,7 +70,7 @@ Tauri 化时这套渲染零修改。
 - 目录：
 
 ```
-packages/ui/
+packages/web/
   ├─ index.html
   ├─ vite.config.ts
   ├─ src/

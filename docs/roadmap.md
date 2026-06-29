@@ -68,7 +68,7 @@
 - 不动 guard：guard 继续是 TS 的纯函数（spiral 3 再翻译）
 - **观察面增益**：on-disk skill 进程已经在 env 里挂了 `X_HARNESS_ACTOR=skill:<name>`，Rust kernel 上来直接读这个变量就能把 skill 调用的副作用也打上 xattr，而不只是 model 直发的 shell.run。
 
-### 2.3 本地 Web UI（packages/ui）— ADR-0004 兑现
+### 2.3 本地 Web UI（packages/web）— ADR-0004 兑现
 - 形态：Vite + React + TS；同时把"将来包 Tauri"的约束写在 README
 - 三屏：
   1. **会话流**（同 cli，加 actor 徽标）

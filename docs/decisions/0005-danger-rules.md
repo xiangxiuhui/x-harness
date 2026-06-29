@@ -140,7 +140,7 @@ detect(action)
 - 规则定义：`crates/x_kernel/src/danger/rules.rs`（数据 + match 引擎）
 - 命中拦截：`crates/x_kernel/src/guard.rs`（IPC 通知外壳）
 - 外壳侧：`packages/core/src/danger-handler.ts`（弹确认 / actor 升级）
-- UI 侧：`packages/ui/src/components/ConfirmDialog.tsx`（"为何危险" + 恢复路径）
+- UI 侧：`packages/web/public/ (TODO: ConfirmDialog)`（"为何危险" + 恢复路径）
 
 ## 实施清单（第一螺旋落地）
 

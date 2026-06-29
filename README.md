@@ -1,6 +1,8 @@
 # x_harness
 
 > An **AI Operating System** harness for the personal computer.
+
+> 👉 **要用它？** 看 [`docs/user-guide.md`](docs/user-guide.md)（用户手册 v0.2，spiral 2 终结快照）。
 >
 > Native cross-OS (macOS → Linux → Windows). Trust-but-audit. Multi-modal entry, single source of truth for who-did-what (human vs. model).
 
