@@ -245,8 +245,12 @@ if [[ "${ADD_ALIAS:-0}" -eq 1 ]]; then
   END_MARK="# <<< x_harness <<<"
 
   # 期望的 block 内容（多行，function 形态）
+  # 关键：先 `unalias x`，防止旧 alias（用户老 rc 里的 / oh-my-zsh 的 extract 插件）
+  # 在 zsh parse 阶段抢先替换 → "parse error near 'version'"。
   if [[ "$SHELL_NAME" == "fish" ]]; then
-    BLOCK_BODY="function x
+    BLOCK_BODY="# Always clear any pre-existing 'x' to avoid alias conflicts
+functions -e x 2>/dev/null
+function x
     pushd \"$SRC_DIR\" >/dev/null
     pnpm -s x \$argv
     set -l rc \$status
@@ -255,7 +259,11 @@ if [[ "${ADD_ALIAS:-0}" -eq 1 ]]; then
 end"
   else
     # zsh / bash 通用 function
-    BLOCK_BODY="x() {
+    BLOCK_BODY="# Always unalias 'x' first: oh-my-zsh's extract plugin and stale aliases
+# from earlier sessions would otherwise win alias-substitution at parse time
+# and break 'x version' with 'parse error near version'.
+unalias x 2>/dev/null || true
+x() {
   ( cd \"$SRC_DIR\" && pnpm -s x \"\$@\" )
 }"
   fi
