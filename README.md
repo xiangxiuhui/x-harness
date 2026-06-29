@@ -14,16 +14,26 @@ curl -fsSL https://raw.githubusercontent.com/xiangxiuhui/x-harness/main/install.
 
 脚本会自动：
 1. 检查 `git` / `node ≥ 20` / `pnpm`（缺啥提示装啥；pnpm 自动用 corepack 启用）
-2. `git clone https://github.com/xiangxiuhui/x-harness` 到 `~/.x_harness-src`
+2. `git clone https://github.com/xiangxiuhui/x-harness` 到 `~/.x_harness/src/`
 3. `pnpm install` + `pnpm typecheck` 自检
 4. 复制 `.env.example` → `.env`
 5. 给当前 shell（zsh/bash/fish）写入 `alias x='...'`
+6. 写 `~/.x_harness/VERSION`（commit + 时间）
+
+**一个目录**装下所有东西，卸载就是 `rm -rf ~/.x_harness`：
+```
+~/.x_harness/
+├── src/              # 源码（installer 全权管，重装会重写）
+├── memory/           # 你的 session JSONL（installer 不动）
+├── territory.yaml    # 领地配置
+├── skills/           # 你的 skills
+└── VERSION           # 当前装的 commit
 
 完成后：
 
 ```bash
 # 1. 填 DeepSeek API key（目前唯一支持的 provider）
-$EDITOR ~/.x_harness-src/.env             # DEEPSEEK_API_KEY=sk-...
+$EDITOR ~/.x_harness/src/.env             # DEEPSEEK_API_KEY=sk-...
 
 # 2. 重开终端（或 source 你的 rc）让 `x` 生效
 
@@ -33,20 +43,23 @@ x chat                                    # 交互式对话
 x web                                     # 浏览器 UI (127.0.0.1:7777)
 ```
 
-**可选参数**：
+**参数**：
 ```bash
-# 装到指定目录、不写 alias、指定分支
-curl -fsSL https://raw.githubusercontent.com/xiangxiuhui/x-harness/main/install.sh \
-  | bash -s -- --dir ~/code/x_harness --no-alias --branch main
+# 装到自定义总目录
+... | bash -s -- --home ~/myx --no-alias
+
+# 应急：清空重装（会备份到 ~/.x_harness.bak.<时间戳>）
+... | bash -s -- --reset
 ```
 
 **手动安装**（不想跑脚本）：
 ```bash
-git clone https://github.com/xiangxiuhui/x-harness.git ~/.x_harness-src
-cd ~/.x_harness-src
+mkdir -p ~/.x_harness
+git clone https://github.com/xiangxiuhui/x-harness.git ~/.x_harness/src
+cd ~/.x_harness/src
 pnpm install
 cp .env.example .env && $EDITOR .env
-alias x='(cd ~/.x_harness-src && pnpm -s x)'
+alias x='(cd ~/.x_harness/src && pnpm -s x)'
 ```
 
 ---
@@ -59,7 +72,7 @@ alias x='(cd ~/.x_harness-src && pnpm -s x)'
 5 分钟看完，包含：
 - CLI 完整命令参考（`chat` / `sessions` / `web` / `trace` / `memory grep` / `feedback`）
 - Web 完整路由 + REST API
-- `~/.x_harness/` 目录结构
+- `~/.x_harness/` 目录结构（一个总目录管所有东西）
 - Territory / Skills / Builtin Tools / Provenance / Feedback 的工作机制
 - 4 个典型工作流（审计、跨会话查错、给模型打分、边聊边看）
 - 故障排查表 + 路线图与已知缺口

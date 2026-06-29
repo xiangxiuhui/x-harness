@@ -175,9 +175,12 @@ REST（同源）：
 
 ## 4. ~/.x_harness/ 目录结构
 
-> **两个目录别搞混**：
-> - `~/.x_harness-src/`（或你装到的别处）= **源码**，installer 管，可随时删除重装
-> - `~/.x_harness/` = **运行时数据**（你的 session、territory、skills），installer **永远不动**
+> **一个目录管所有**：`~/.x_harness/` 是 x_harness 的总目录。
+> - `~/.x_harness/src/` 是**源码**（installer 全权管理，重装会被重写）
+> - `~/.x_harness/{memory,territory.yaml,skills,...}` 是**运行时数据**（你的劳动成果，installer 绝不动）
+> - `~/.x_harness/VERSION` 是当前装的 commit + 安装时间
+>
+> 彻底卸载：`rm -rf ~/.x_harness`。
 
 ```
 ~/.x_harness/
