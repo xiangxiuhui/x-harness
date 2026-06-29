@@ -15,7 +15,10 @@
 #   5. 默认追加 `alias x='...'` 到当前 shell rc（除非 --no-alias）
 #   6. 打印下一步操作
 
-set -euo pipefail
+# 已知陷阱：macOS 自带 /bin/bash 是 3.2.57，对 `set -u` 严格模式 + 某些参数展开
+# 不友好。这里用 `set -eo pipefail`（不带 -u），并对可能未初始化的变量统一
+# 用 `${var:-}` 防御。
+set -eo pipefail
 
 # ── defaults ─────────────────────────────────────────────────────────────
 REPO_URL="${X_HARNESS_REPO:-https://github.com/xiangxiuhui/x-harness.git}"
@@ -124,16 +127,22 @@ else
 fi
 
 # ── alias ────────────────────────────────────────────────────────────────
-if [[ "$ADD_ALIAS" -eq 1 ]]; then
+if [[ "${ADD_ALIAS:-0}" -eq 1 ]]; then
   step "配置 \`x\` 命令"
   SHELL_NAME="$(basename "${SHELL:-bash}")"
   RC=""
   case "$SHELL_NAME" in
     zsh)  RC="$HOME/.zshrc" ;;
-    bash) [[ -f "$HOME/.bashrc" ]] && RC="$HOME/.bashrc" || RC="$HOME/.bash_profile" ;;
+    bash) if [[ -f "$HOME/.bashrc" ]]; then RC="$HOME/.bashrc"; else RC="$HOME/.bash_profile"; fi ;;
     fish) RC="$HOME/.config/fish/config.fish" ;;
     *)    RC="" ;;
   esac
+
+  # macOS 默认未设 SHELL 时的兼容
+  if [[ -z "${RC:-}" && "$(uname -s)" == "Darwin" ]]; then
+    RC="$HOME/.zshrc"
+    SHELL_NAME="zsh"
+  fi
 
   ALIAS_LINE="alias x='(cd \"$INSTALL_DIR\" && pnpm -s x)'"
   if [[ "$SHELL_NAME" == "fish" ]]; then
@@ -142,10 +151,11 @@ if [[ "$ADD_ALIAS" -eq 1 ]]; then
   MARK="# >>> x_harness >>>"
   END_MARK="# <<< x_harness <<<"
 
-  if [[ -n "$RC" && -f "$RC" ]] && grep -qF "$MARK" "$RC"; then
+  if [[ -n "${RC:-}" && -f "$RC" ]] && grep -qF "$MARK" "$RC"; then
     ok "alias 已经在 $RC 里，跳过"
-  elif [[ -n "$RC" ]]; then
+  elif [[ -n "${RC:-}" ]]; then
     mkdir -p "$(dirname "$RC")"
+    touch "$RC"
     {
       echo ""
       echo "$MARK"
