@@ -104,6 +104,12 @@ export function digestEntry(e: MemoryEntry): string {
       return `[${t}] sys:territory loaded ${e.payload.zones.length} zone(s)${e.payload.generatedDefault ? ' (default created)' : ''}`;
     case 'provenance.attach':
       return `[${t}] sys:provenance ${e.payload.xattrOk ? '✓' : '✗'} ${e.payload.provenance.path} (${e.payload.provenance.autonomy})`;
+    case 'evolution.feedback': {
+      const p = e.payload;
+      const tag = p.verdict === 'accept' ? '👍' : p.verdict === 'reject' ? '👎' : '💡';
+      const tail = p.suggestion ? ` — "${oneLine(p.suggestion, 60)}"` : p.note ? ` — "${oneLine(p.note, 60)}"` : '';
+      return `[${t}] human:${tag} on #${p.targetSeq} ${p.targetKind} (${p.verdict})${tail}`;
+    }
   }
 }
 

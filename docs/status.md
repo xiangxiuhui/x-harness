@@ -164,3 +164,39 @@ CLI 5 hit vs `/api/memory/grep?q=hello&limit=3` 3 hit ：同源 ✅
 - 全扫无索引（≤100MB 之前不需要）
 - 嵌套 payload 用 JSON.stringify 当文本搜（适合 grep 风味，不适合"按结构精确查"）
 - 没有 follow / tail（特定 session 已经有 SSE）
+
+## 2026-06-29 spiral 2/4 v0 — Evolution capture（A 完成）
+### 做了什么
+- ADR-0012 写定（事件级 evolution + Surface Parity write-side debut）
+- 新 `MemoryEntry` kind：`evolution.feedback`，三种 verdict：`accept | reject | i-would-have`
+- 同源接入：`grepMemory` / `readSession` 自动看到，**不另开存储**
+- `@x_harness/memory`：`appendFeedback / listFeedback` 库函数
+  - 并发安全：`fs.appendFile` 在 POSIX 上对 <PIPE_BUF (4096B) 的写是原子的；feedback 行远小于此
+  - seq 计算：re-scan max(seq)+1（足够 v0；冲突路径已记入 ADR-0012）
+- CLI：
+  - `x feedback <sess> <seq> <verdict> [--note ..] [--suggestion ..]` 记录
+  - `x feedback list [--session ID] [--verdict V] [--json]` 回看
+  - `i-would-have` 缺 `--suggestion` 直接拒绝（exit 2）
+- Web（**写侧首发**）：
+  - `POST /api/feedback`（新加 `readBody()`，64KB cap，本地 127.0.0.1，无 CSRF v0）
+  - `GET /api/feedback?session&verdict&limit`
+  - 会话视图每条 entry 旁边 👍 / 👎 / 💡 按钮（prompt 注释/建议）
+  - 独立 `#/feedback` 列表视图，支持 verdict / session 过滤
+- replay digest 加 `evolution.feedback` 的人类可读输出
+### 端到端
+真实 `sess-iz8cox4e` 上：
+```
+$ x feedback sess-iz8cox4e 2 accept --note "..."     → seq=17 ✓
+$ x feedback sess-iz8cox4e 3 reject --note "..."     → seq=18 ✓
+$ x feedback sess-iz8cox4e 4 i-would-have            → error (suggestion required, exit 2) ✓
+$ x feedback sess-iz8cox4e 4 i-would-have --suggestion "..."  → seq=19 ✓
+$ x feedback list --session sess-iz8cox4e            → 3 events, newest first
+POST /api/feedback                                    → 201 seq=20 ✓
+POST /api/feedback {verdict:"NOPE"}                   → 400 ✓
+GET  /api/feedback?verdict=reject                     → 2 hits (CLI+web 同源)
+GET  /api/memory/grep?q="should have"&kind=evolution.feedback → 1 hit ✓
+```
+### v0 边界
+1. 草稿生成（reject + i-would-have → skill draft）未做：schema 已留足空间
+2. seq 冲突理论可能（human 慢 + model 快），实际 v0 没遇到；ADR-0012 列了升级路径
+3. POST 没 CSRF：local-only 127.0.0.1 + 写入只能附加 JSONL，攻击面≈本地任意进程

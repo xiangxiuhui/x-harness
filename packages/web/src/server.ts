@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
-import { listSessions, readSession, grepMemory } from '@x_harness/memory';
+import { listSessions, readSession, grepMemory, appendFeedback, listFeedback } from '@x_harness/memory';
+import type { FeedbackVerdict } from '@x_harness/memory';
 import { loadTerritory } from '@x_harness/core';
 import type { SkillRegistry } from '@x_harness/skills';
 import { trace as traceProvenance } from '@x_harness/provenance';
@@ -175,6 +176,62 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
     }
   }
 
+  if (p === '/api/feedback' && req.method === 'GET') {
+    const sessionId = url.searchParams.get('session') || undefined;
+    const verdict = (url.searchParams.get('verdict') || undefined) as FeedbackVerdict | undefined;
+    const limit = parseInt(url.searchParams.get('limit') ?? '', 10);
+    const rows = await listFeedback({
+      home: ctx.home,
+      sessionId,
+      verdict,
+      limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+    });
+    return sendJson(res, 200, { feedback: rows });
+  }
+
+  if (p === '/api/feedback' && req.method === 'POST') {
+    let body: string;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return sendJson(res, 400, { error: 'body read failed: ' + (e as Error).message });
+    }
+    let payload: {
+      sessionId?: string;
+      targetSeq?: number;
+      targetKind?: string;
+      verdict?: FeedbackVerdict;
+      note?: string;
+      suggestion?: string;
+    };
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      return sendJson(res, 400, { error: 'invalid JSON body' });
+    }
+    if (!payload.sessionId || !Number.isFinite(payload.targetSeq) || !payload.targetKind || !payload.verdict) {
+      return sendJson(res, 400, { error: 'required fields: sessionId, targetSeq, targetKind, verdict' });
+    }
+    if (!['accept', 'reject', 'i-would-have'].includes(payload.verdict)) {
+      return sendJson(res, 400, { error: 'verdict must be accept | reject | i-would-have' });
+    }
+    try {
+      const entry = await appendFeedback({
+        home: ctx.home,
+        sessionId: payload.sessionId,
+        targetSeq: payload.targetSeq!,
+        targetKind: payload.targetKind,
+        verdict: payload.verdict,
+        note: payload.note,
+        suggestion: payload.suggestion,
+        actor: { kind: 'human', userId: process.env.USER ?? 'unknown', surface: 'web' },
+      });
+      return sendJson(res, 201, { ok: true, entry });
+    } catch (e) {
+      return sendJson(res, 400, { error: (e as Error).message });
+    }
+  }
+
   // ── Static ──────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
     if (p === '/' || p === '/index.html') {
@@ -202,6 +259,23 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
     'cache-control': 'no-store',
   });
   res.end(data);
+}
+
+function readBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    req.on('data', (c: Buffer) => {
+      total += c.length;
+      if (total > maxBytes) {
+        req.destroy();
+        return reject(new Error('body too large'));
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
 }
 
 function serveFile(res: ServerResponse, abs: string): void {

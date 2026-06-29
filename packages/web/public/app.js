@@ -33,6 +33,7 @@ const routes = [
   { re: /^#\/skills$/, fn: viewSkills },
   { re: /^#\/trace(?:\?(.*))?$/, fn: (m) => viewTrace(parseQuery(m[1] || '').path) },
   { re: /^#\/memory(?:\?(.*))?$/, fn: (m) => viewMemory(parseQuery(m[1] || '')) },
+  { re: /^#\/feedback(?:\?(.*))?$/, fn: (m) => viewFeedback(parseQuery(m[1] || '')) },
 ];
 
 function parseQuery(qs) {
@@ -165,7 +166,10 @@ async function viewSession(id, live) {
       el('span', { class: 'kind' }, e.kind),
     );
     const body = el('div', { class: 'body' }, formatPayload(e));
-    $list.append(el('div', { class: klass }, meta, body));
+    const actions = feedbackActions(id, e);
+    const node = el('div', { class: klass }, meta, body);
+    if (actions) node.append(actions);
+    $list.append(node);
   }
 
   if (live) {
@@ -444,4 +448,115 @@ function highlightInto(node, text, opts) {
     if (m[0].length === 0) re.lastIndex++;
   }
   if (last < text.length) node.appendChild(document.createTextNode(text.slice(last)));
+}
+
+// ─── evolution feedback (spiral 2/4) ───────────────────────────────────
+const FEEDBACK_SKIP_KINDS = new Set([
+  'session.start', 'session.end',
+  'evolution.feedback',
+  'territory.loaded',
+  'tool.approval', // user already gave a verdict via danger guard
+]);
+function feedbackActions(sessionId, e) {
+  if (FEEDBACK_SKIP_KINDS.has(e.kind)) return null;
+  const row = el('div', { class: 'fb-row' });
+  const accept = el('button', { class: 'fb fb-ok', title: 'looks good' }, '👍');
+  const reject = el('button', { class: 'fb fb-bad', title: 'this was wrong' }, '👎');
+  const iwh = el('button', { class: 'fb fb-iwh', title: 'I would have…' }, '💡');
+  const status = el('span', { class: 'fb-status muted' });
+  const setStatus = (txt, ok) => { status.textContent = txt; status.className = 'fb-status ' + (ok ? 'ok' : 'err'); };
+  const send = async (verdict, extras) => {
+    try {
+      const r = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          targetSeq: e.seq,
+          targetKind: e.kind,
+          verdict,
+          ...extras,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setStatus('error: ' + (j.error || r.status), false); return; }
+      setStatus('recorded seq=' + j.entry.seq + ' (' + verdict + ')', true);
+      [accept, reject, iwh].forEach(b => b.disabled = true);
+    } catch (err) {
+      setStatus('error: ' + err.message, false);
+    }
+  };
+  accept.addEventListener('click', () => {
+    const note = prompt('optional note (why was this good?):', '') || undefined;
+    send('accept', note ? { note } : {});
+  });
+  reject.addEventListener('click', () => {
+    const note = prompt('why was this wrong? (optional):', '') || undefined;
+    send('reject', note ? { note } : {});
+  });
+  iwh.addEventListener('click', () => {
+    const suggestion = prompt('what would you have done instead?');
+    if (!suggestion) return;
+    send('i-would-have', { suggestion });
+  });
+  row.append(accept, reject, iwh, status);
+  return row;
+}
+
+// ─── feedback list view ────────────────────────────────────────────────
+async function viewFeedback(initial) {
+  clear($view);
+  const filters = el('div', { class: 'fb-filters' });
+  const verdict = el('select', {},
+    el('option', { value: '' }, 'all verdicts'),
+    el('option', { value: 'accept' }, 'accept'),
+    el('option', { value: 'reject' }, 'reject'),
+    el('option', { value: 'i-would-have' }, 'i-would-have'),
+  );
+  if (initial.verdict) verdict.value = initial.verdict;
+  const session = el('input', { type: 'text', placeholder: 'session id (optional)', value: initial.session || '' });
+  const apply = el('button', {}, 'Reload');
+  filters.append(el('label', {}, 'verdict ', verdict), el('label', {}, 'session ', session), apply);
+  const head = el('h2', {}, 'Evolution feedback');
+  const host = el('div', { class: 'fb-list' });
+  $view.append(head, filters, host);
+  const load = async () => {
+    const params = new URLSearchParams();
+    if (verdict.value) params.set('verdict', verdict.value);
+    if (session.value) params.set('session', session.value);
+    location.hash = '#/feedback' + (params.toString() ? '?' + params : '');
+    host.replaceChildren(el('div', { class: 'muted' }, 'loading…'));
+    try {
+      const j = await getJSON('/api/feedback?' + params.toString());
+      renderFeedbackList(host, j.feedback || []);
+    } catch (e) {
+      host.replaceChildren(el('div', { class: 'err' }, 'error: ' + e.message));
+    }
+  };
+  apply.addEventListener('click', load);
+  await load();
+}
+
+function renderFeedbackList(host, rows) {
+  host.replaceChildren();
+  if (!rows.length) {
+    host.append(el('div', { class: 'muted' }, 'no feedback recorded yet'));
+    return;
+  }
+  for (const r of rows) {
+    const tag = r.payload.verdict === 'accept' ? '👍'
+      : r.payload.verdict === 'reject' ? '👎'
+      : '💡';
+    const head = el('div', { class: 'fb-head' },
+      el('span', { class: 'fb-tag fb-' + r.payload.verdict }, tag + ' ' + r.payload.verdict),
+      el('a', { href: '#/sessions/' + r.sessionId }, r.sessionId),
+      el('span', { class: 'muted' }, '#' + r.payload.targetSeq + ' ' + r.payload.targetKind),
+      el('span', { class: 'mem-ts' }, r.ts),
+    );
+    const body = el('div', { class: 'fb-body' });
+    if (r.payload.suggestion) body.append(el('div', {}, el('em', {}, 'suggestion: '), r.payload.suggestion));
+    if (r.payload.note) body.append(el('div', { class: 'muted' }, r.payload.note));
+    host.append(el('div', { class: 'fb-item' }, head, body));
+  }
+  host.append(el('div', { class: 'muted' }, rows.length + ' feedback events'));
 }

@@ -11,6 +11,7 @@ import { runSessions } from './sessions.js';
 import { runWeb } from './web.js';
 import { runTrace } from './trace.js';
 import { runMemory } from './memory.js';
+import { runFeedback } from './feedback.js';
 
 const USAGE = `x_harness CLI (spiral 1)
 
@@ -21,6 +22,10 @@ Usage:
   x web [--port N]            Start the local read-only web UI (ADR-0011).
   x trace <path> [--json]     Show AI-touch provenance on a file (ADR-0009).
   x memory grep <pat> [...]   Search recorded JSONL events across sessions.
+  x feedback <sess> <seq> <verdict> [--note ..] [--suggestion ..]
+                              Record evolution feedback (ADR-0009/spiral 2/4).
+  x feedback list [--session ID] [--verdict V] [--json]
+                              List recorded feedback events.
   x version
 
 Environment:
@@ -55,6 +60,8 @@ async function main(): Promise<number> {
       return runTrace(rest);
     case 'memory':
       return runMemory(rest);
+    case 'feedback':
+      return runFeedback(rest);
     default:
       process.stderr.write(`unknown command: ${cmd}\n\n${USAGE}`);
       return 2;

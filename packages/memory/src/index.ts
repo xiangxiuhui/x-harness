@@ -14,3 +14,4 @@ export * from './types.js';
 export * from './store.js';
 export * from './replay.js';
 export * from './grep.js';
+export * from './feedback.js';
