@@ -175,6 +175,10 @@ REST（同源）：
 
 ## 4. ~/.x_harness/ 目录结构
 
+> **两个目录别搞混**：
+> - `~/.x_harness-src/`（或你装到的别处）= **源码**，installer 管，可随时删除重装
+> - `~/.x_harness/` = **运行时数据**（你的 session、territory、skills），installer **永远不动**
+
 ```
 ~/.x_harness/
 ├── territory.yaml              # 你的领地配置（§5）

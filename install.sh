@@ -92,24 +92,32 @@ ok "git $(git --version | awk '{print $3}')"
 # ── clone / update ───────────────────────────────────────────────────────
 step "获取源码 → $INSTALL_DIR"
 
-if [[ -d "$INSTALL_DIR/.git" ]]; then
-  warn "目录已存在，强制同步到 origin/$BRANCH"
-  # 安装目录应当由脚本管理；若有本地改动，自动 stash 到一个带时间戳的 ref，
-  # 然后 hard reset。这样不会丢数据（stash 可恢复），又能保证幂等。
-  if ! git -C "$INSTALL_DIR" diff --quiet 2>/dev/null || \
-     ! git -C "$INSTALL_DIR" diff --cached --quiet 2>/dev/null; then
-    STASH_TAG="x_harness-installer-$(date +%Y%m%d-%H%M%S)"
-    warn "检测到本地未提交改动，自动 stash 为：$STASH_TAG"
-    git -C "$INSTALL_DIR" stash push --include-untracked -m "$STASH_TAG" >/dev/null 2>&1 || true
-    warn "  恢复方式：cd $INSTALL_DIR && git stash list"
+# 提示：~/.x_harness（运行时数据：sessions JSONL、territory、skills）和
+# $INSTALL_DIR（源码：可重装）是**两个完全不同的目录**。
+# installer 只管源码目录，永远不动 ~/.x_harness。
+if [[ -d "$HOME/.x_harness" ]]; then
+  ok "检测到运行时数据 ~/.x_harness（installer 不会动它）"
+fi
+
+# 安装目录归 installer 全管：策略 = 删了重 clone。
+# 例外：如果安装目录里有 `.env`（含 API key），先备份到 /tmp，clone 完再放回。
+if [[ -d "$INSTALL_DIR" || -e "$INSTALL_DIR" ]]; then
+  if [[ ! -d "$INSTALL_DIR/.git" && -e "$INSTALL_DIR" ]]; then
+    die "$INSTALL_DIR 已存在但不是 git 仓库；移走再试，或用 --dir 换个目录"
   fi
-  git -C "$INSTALL_DIR" fetch --quiet --depth 1 origin "$BRANCH"
-  git -C "$INSTALL_DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
-  git -C "$INSTALL_DIR" reset --hard --quiet "origin/$BRANCH"
-elif [[ -e "$INSTALL_DIR" ]]; then
-  die "$INSTALL_DIR 已存在但不是 git 仓库；移走再试，或用 --dir 换个目录"
-else
-  git clone --quiet --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+  warn "目录已存在，删除后重新 clone（最干净）"
+  ENV_BACKUP=""
+  if [[ -f "$INSTALL_DIR/.env" ]]; then
+    ENV_BACKUP="$(mktemp -t x_harness_env.XXXXXX)"
+    cp "$INSTALL_DIR/.env" "$ENV_BACKUP"
+    ok "已备份 .env → $ENV_BACKUP（clone 完会自动放回）"
+  fi
+  rm -rf "$INSTALL_DIR"
+fi
+git clone --quiet --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+if [[ -n "${ENV_BACKUP:-}" && -f "$ENV_BACKUP" ]]; then
+  mv "$ENV_BACKUP" "$INSTALL_DIR/.env"
+  ok "已恢复 .env"
 fi
 ok "源码就位：$(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
 
