@@ -35,7 +35,10 @@ curl -fsSL https://raw.githubusercontent.com/xiangxiuhui/x-harness/main/install.
 # 1. 填 DeepSeek API key（目前唯一支持的 provider）
 $EDITOR ~/.x_harness/src/.env             # DEEPSEEK_API_KEY=sk-...
 
-# 2. 重开终端（或 source 你的 rc）让 `x` 生效
+# 2. 让 `x` 命令在当前 shell 生效（installer 是子进程，无法影响父 shell，三选一）：
+source ~/.x_harness/activate.sh           # 最快（installer 已生成）
+# 或 source ~/.zshrc                      # 装的时候 alias 已经写进 rc
+# 或 exec $SHELL                          # 原地重开 shell
 
 # 3. 开始用
 x version                                 # 自检

@@ -291,18 +291,25 @@ x() {
       echo "$END_MARK"
     } >> "$RC"
     ok "已写入 $RC"
-    # 自动 source 让当前 shell 立刻可用
-    if [[ -n "${RC:-}" ]] && source "$RC" 2>/dev/null; then
-      ok "已自动 source $RC，`x` 命令现在可用"
-    else
-      ok "请重开终端或 \`source $RC\` 让 \`x\` 生效"
-    fi
   else
     warn "未识别的 shell ($SHELL_NAME)，请手动加 function："
     printf '%s\n' "$BLOCK_BODY"
   fi
 
-  # 清理旧的 ~/.x_harness-src 残留（如果之前迁移过但还存在）
+  # 同时写一个独立 activation 文件，避免用户的 ~/.zshrc 有奇怪报错时
+  # source 整个 rc 失败。这个文件只包含 unalias + function 定义。
+  ACTIVATE="$X_HOME/activate.sh"
+  cat > "$ACTIVATE" <<ACT
+# x_harness shell activation (sh/bash/zsh)
+# Source this OR your shell rc to make the \`x\` command available.
+unalias x 2>/dev/null || true
+x() {
+  ( cd "$SRC_DIR" && pnpm -s x "\$@" )
+}
+ACT
+  ok "已生成 $ACTIVATE（任何 sh/bash/zsh 都能 \`source\` 它）"
+
+  # 清理旧的 ~/.x_harness-src 残留
   if [[ -e "$HOME/.x_harness-src" && ! -L "$HOME/.x_harness-src" ]]; then
     warn "检测到旧目录 ~/.x_harness-src 仍存在（已不再使用，可手动删除）"
   fi
@@ -347,14 +354,17 @@ printf '\n%s%s✅ 完成。%s\n\n' "$GREEN" "$BOLD" "$RESET_C"
 printf '%s下一步：%s\n' "$BOLD" "$RESET_C"
 STEP=1
 if [[ "$ENV_OK" -ne 1 ]]; then
-  printf '  %d. %s填 API key%s：编辑 %s%s/.env%s，填 DEEPSEEK_API_KEY\n' \
+  printf '  %d. %s填 API key%s：%sedit %s/.env%s（DEEPSEEK_API_KEY=sk-...）\n' \
     "$STEP" "$CYAN" "$RESET_C" "$DIM" "$SRC_DIR" "$RESET_C"
   STEP=$((STEP + 1))
 fi
-printf '  %d. %s开始用%s：\n' "$STEP" "$CYAN" "$RESET_C"
-printf '       %sx version%s              # 自检（应输出 x_harness 0.0.1）\n' "$BOLD" "$RESET_C"
-printf '       %sx chat%s                  # 进入对话\n' "$BOLD" "$RESET_C"
-printf '       %sx web%s                   # 启动本地 Web UI\n' "$BOLD" "$RESET_C"
+printf '  %d. %s让 `x` 生效%s（脚本无法影响父 shell，三选一）：\n' "$STEP" "$CYAN" "$RESET_C"
+printf '       %ssource %s%s                    # 最快\n' "$BOLD" "$ACTIVATE" "$RESET_C"
+printf '       %ssource %s%s                  # 或：source 你的 rc\n' "$BOLD" "${RC:-~/.zshrc}" "$RESET_C"
+printf '       %sexec %s%s                       # 或：原地重开 shell\n' "$BOLD" "${SHELL:-zsh}" "$RESET_C"
+STEP=$((STEP + 1))
+printf '  %d. %s开始用%s：%sx version%s / %sx chat%s / %sx web%s\n' \
+  "$STEP" "$CYAN" "$RESET_C" "$BOLD" "$RESET_C" "$BOLD" "$RESET_C" "$BOLD" "$RESET_C"
 printf '\n'
 printf '%s总目录：%s（删它就是彻底卸载）\n' "$DIM" "$X_HOME"
 printf '文档：%s/docs/user-guide.md\n' "$SRC_DIR"
