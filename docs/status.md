@@ -217,3 +217,16 @@ GET  /api/memory/grep?q="should have"&kind=evolution.feedback → 1 hit ✓
 - typecheck 0 输出
 ### 后续协作
 用户会在 user-guide.md 上直接改 / 留评论 / 提问，回归之后从 user-guide 校准下一步螺旋。
+
+## 2026-06-29 一句指令安装 + README 重组
+### 做了什么
+- 新增 `install.sh`：一句 `curl ... | bash` 即可完成 clone + pnpm install + typecheck + .env + shell alias 全套
+  - 自检 git / node>=20 / pnpm（pnpm 缺则 corepack 自启）
+  - 二次运行幂等（git pull 路径）
+  - 支持 `--dir` / `--branch` / `--no-alias` / env `X_HARNESS_REPO` / `X_HARNESS_DIR`
+  - 支持 zsh / bash / fish 三种 shell 写 alias，带 marker 防重复
+- README 重组：顶部「⚡ 一句指令安装」+ 「📖 完整用户手册」入口；快速起步合并到 install.sh 一行
+- 仓库结构表更新（删 packages/ui 占位、添 packages/web 等真实包、addinstall.sh）
+- 状态部分简化（spiral 2 已完成、下一螺旋候选）
+### 端到端
+本地 /tmp 沙盒（HOME 隔离）：首次安装 + 二次幂等 + `pnpm x version` 输出 `x_harness 0.0.1 (spiral 1)`，全绿
