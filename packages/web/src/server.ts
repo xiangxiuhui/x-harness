@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
-import { listSessions, readSession } from '@x_harness/memory';
+import { listSessions, readSession, grepMemory } from '@x_harness/memory';
 import { loadTerritory } from '@x_harness/core';
 import type { SkillRegistry } from '@x_harness/skills';
 import { trace as traceProvenance } from '@x_harness/provenance';
@@ -145,6 +145,31 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
     try {
       const r = traceProvenance(abs);
       return sendJson(res, 200, { path: abs, ...r });
+    } catch (e) {
+      return sendJson(res, 500, { error: (e as Error).message });
+    }
+  }
+
+  if (p === '/api/memory/grep' && req.method === 'GET') {
+    const pattern = url.searchParams.get('q') ?? '';
+    if (!pattern) return sendJson(res, 400, { error: 'q query param required' });
+    const kinds = url.searchParams.getAll('kind').filter(Boolean);
+    const sessionId = url.searchParams.get('session') || undefined;
+    const since = url.searchParams.get('since') || undefined;
+    const limit = parseInt(url.searchParams.get('limit') ?? '', 10);
+    const regex = url.searchParams.get('regex') === '1';
+    const caseSensitive = url.searchParams.get('case') === '1';
+    try {
+      const r = await grepMemory(ctx.home, {
+        pattern,
+        regex,
+        caseSensitive,
+        kinds: kinds.length ? kinds : undefined,
+        sessionId,
+        since,
+        limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+      });
+      return sendJson(res, 200, r);
     } catch (e) {
       return sendJson(res, 500, { error: (e as Error).message });
     }

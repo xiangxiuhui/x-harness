@@ -32,6 +32,7 @@ const routes = [
   { re: /^#\/territory$/, fn: viewTerritory },
   { re: /^#\/skills$/, fn: viewSkills },
   { re: /^#\/trace(?:\?(.*))?$/, fn: (m) => viewTrace(parseQuery(m[1] || '').path) },
+  { re: /^#\/memory(?:\?(.*))?$/, fn: (m) => viewMemory(parseQuery(m[1] || '')) },
 ];
 
 function parseQuery(qs) {
@@ -352,4 +353,95 @@ function renderTrace(r) {
     root.append(el('div', { class: 'muted' }, r.notes.join(' · ')));
   }
   return root;
+}
+
+// ─── memory grep ───────────────────────────────────────────────────────
+async function viewMemory(initial) {
+  const form = el('div', { class: 'mem-form' });
+  const q = el('input', { type: 'text', placeholder: 'pattern (literal by default)', value: initial.q || '' });
+  const kind = el('input', { type: 'text', placeholder: 'kind (e.g. user.message; comma-sep ok)', value: initial.kind || '' });
+  const session = el('input', { type: 'text', placeholder: 'session id (optional)', value: initial.session || '' });
+  const since = el('input', { type: 'text', placeholder: 'since ISO (optional, e.g. 2026-06-26)', value: initial.since || '' });
+  const regex = el('input', { type: 'checkbox' });
+  if (initial.regex === '1') regex.checked = true;
+  const cs = el('input', { type: 'checkbox' });
+  if (initial.case === '1') cs.checked = true;
+  const btn = el('button', {}, 'Search');
+  const results = el('div', { class: 'mem-results' }, 'enter a pattern and search');
+  form.append(
+    el('label', {}, 'q ', q),
+    el('label', {}, 'kind ', kind),
+    el('label', {}, 'session ', session),
+    el('label', {}, 'since ', since),
+    el('label', { class: 'cb' }, regex, ' regex'),
+    el('label', { class: 'cb' }, cs, ' case'),
+    btn,
+  );
+  const root = el('div', { class: 'view' }, el('h2', {}, 'Memory grep'), form, results);
+  $view.replaceChildren(root);
+
+  const doSearch = async () => {
+    if (!q.value) return;
+    results.replaceChildren(el('div', { class: 'muted' }, 'searching…'));
+    const params = new URLSearchParams();
+    params.set('q', q.value);
+    if (regex.checked) params.set('regex', '1');
+    if (cs.checked) params.set('case', '1');
+    for (const k of kind.value.split(',').map(s => s.trim()).filter(Boolean)) params.append('kind', k);
+    if (session.value) params.set('session', session.value);
+    if (since.value) params.set('since', since.value);
+    location.hash = '#/memory?' + params.toString();
+    try {
+      const r = await getJSON('/api/memory/grep?' + params.toString());
+      renderGrep(results, r, { q: q.value, regex: regex.checked, case: cs.checked });
+    } catch (e) {
+      results.replaceChildren(el('div', { class: 'err' }, 'error: ' + e.message));
+    }
+  };
+  btn.addEventListener('click', doSearch);
+  q.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+  // Auto-search if invoked with q in URL.
+  if (initial.q) doSearch();
+}
+
+function renderGrep(host, r, opts) {
+  host.replaceChildren();
+  if (!r.hits || r.hits.length === 0) {
+    host.append(el('div', { class: 'muted' }, `no matches (scanned ${r.totalScanned} across ${r.sessionsScanned} sessions)`));
+    return;
+  }
+  const summary = el('div', { class: 'mem-summary' },
+    `${r.totalMatched} matches in ${r.sessionsScanned} sessions${r.truncated ? ' (truncated)' : ''}`);
+  host.append(summary);
+  const tbl = el('div', { class: 'mem-hits' });
+  for (const h of r.hits) {
+    const head = el('div', { class: 'mem-head' },
+      el('a', { href: '#/sessions/' + h.sessionId }, h.sessionId),
+      el('span', { class: 'muted' }, '#' + h.seq),
+      el('span', { class: 'mem-ts' }, h.ts),
+      el('span', { class: 'mem-kind' }, h.kind),
+      el('span', { class: 'muted' }, '[' + h.matchedField + ']'),
+    );
+    const ex = el('div', { class: 'mem-excerpt' });
+    highlightInto(ex, h.excerpt, opts);
+    tbl.append(el('div', { class: 'mem-hit' }, head, ex));
+  }
+  host.append(tbl);
+}
+
+function highlightInto(node, text, opts) {
+  let re;
+  try {
+    re = opts.regex
+      ? new RegExp(opts.q, opts.case ? 'g' : 'gi')
+      : new RegExp(opts.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), opts.case ? 'g' : 'gi');
+  } catch { node.textContent = text; return; }
+  let last = 0; let m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) node.appendChild(document.createTextNode(text.slice(last, m.index)));
+    node.appendChild(el('mark', {}, m[0]));
+    last = m.index + m[0].length;
+    if (m[0].length === 0) re.lastIndex++;
+  }
+  if (last < text.length) node.appendChild(document.createTextNode(text.slice(last)));
 }

@@ -136,3 +136,31 @@ CLI `x trace <path>` 与 Web `GET /api/trace` 输出语义一致（Surface Parit
 2. **`originatingHumanMessageSeq` 用 ordinal 近似真实 JSONL seq**：JSONL 里没存 seq 字段，trace 反向查找按 path 匹配 `provenance.attach` 条目即可，影响很小。
 3. **builtin/file.write 之外的写动作**（`shell.run` 中的 echo > x、未来的 `file.edit`）尚未挂 provenance hook：等 file.edit 落地一并处理。
 4. **xattr 在跨 fs 传输会丢**：JSONL 是真源，可恢复。
+
+## 2026-06-29 spiral 2/5 — Memory grep（B 完成）
+### 做了什么
+- `@x_harness/memory`：新增 `grepMemory(home, opts)` 纯库
+  - 字面 / 正则匹配（默认大小写不敏感）
+  - 过滤：`kinds` `sessionId` `since` `limit` `perSessionLimit`
+  - 输出：`{ totalScanned, totalMatched, truncated, sessionsScanned, hits[] }`，每个 hit 带 excerpt + matchedField
+- `x memory grep <pat> [--regex] [--case] [--kind K]... [--session ID] [--since ISO] [--limit N] [--json]`
+  - 命中：彩色行 `sessionId #seq ts kind [field]\n  excerpt`，关键词高亮
+  - `--json`：完整 GrepResult；exit 1 if no hits
+- `GET /api/memory/grep?q&regex&case&kind&session&since&limit`：同源 surface parity
+- Web `#/memory` 视图：表单 + 命中卡片 + `<mark>` 高亮，URL 同步 query
+### 端到端
+真实 `~/.x_harness/memory/`（4 会话、63 条目）：
+```
+$ x memory grep hello --limit 5
+sess-iz8cox4e #6 2026-06-25T12:00:50.583Z tool.result [output] …reportlab… canvas.Canvas("hello.pdf"…
+sess-wink4ueg #4 2026-06-25T11:14:48.990Z assistant.message [toolCalls] …shell_run…Hello, Alice!
+sess-wink4ueg #5 2026-06-25T11:14:48.991Z tool.call [argumentsJson] {"command": "echo \"Hello, Alice!\""}
+sess-wink4ueg #6 2026-06-25T11:14:49.013Z tool.result [output] $ echo "Hello, Alice!"…
+sess-wink4ueg #7 2026-06-25T11:14:50.026Z assistant.message [content] 已通过 shell 向 Alice 打了招呼…
+5 matches in 4 sessions (truncated)
+```
+CLI 5 hit vs `/api/memory/grep?q=hello&limit=3` 3 hit ：同源 ✅
+### v0 边界
+- 全扫无索引（≤100MB 之前不需要）
+- 嵌套 payload 用 JSON.stringify 当文本搜（适合 grep 风味，不适合"按结构精确查"）
+- 没有 follow / tail（特定 session 已经有 SSE）
