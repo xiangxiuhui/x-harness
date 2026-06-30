@@ -298,6 +298,35 @@ export class Session {
         return;
       }
       if (rounds >= this.maxToolRounds) {
+        // We have an assistant message with `toolCalls` but we're about to
+        // bail without executing them. The OpenAI/DeepSeek protocol requires
+        // every tool_call to be answered by a tool message — otherwise the
+        // NEXT request fails with HTTP 400 "insufficient tool messages".
+        // Inject synthetic tool replies so the message history stays valid.
+        for (const call of toolCalls) {
+          this.appendToolResult(
+            call.id,
+            '[x_harness] tool call skipped: max-rounds safety cap hit before execution.',
+          );
+          this.bus.publish({
+            actor: { kind: 'system', subsystem: 'skill-runtime' },
+            kind: 'tool.result',
+            payload: {
+              id: call.id,
+              name: call.name,
+              output: '[skipped: max-rounds cap]',
+              error: true,
+              blocked: true,
+            },
+          });
+          await this.memory?.onToolResult?.({
+            id: call.id,
+            name: call.name,
+            output: '[skipped: max-rounds cap]',
+            error: true,
+            blocked: true,
+          });
+        }
         this.messages.push({
           role: 'user',
           content:
@@ -313,8 +342,15 @@ export class Session {
       // (round 1 = direct response to a human turn; round >= 2 = elaborated)
       this.toolRoundsSinceLastHuman += 1;
 
-      for (const call of toolCalls) {
-        const skill = this.skills.get(call.name);
+      // Protocol invariant: every assistant tool_call MUST be followed by a
+      // tool reply with the same id, otherwise the next provider request
+      // throws HTTP 400. We track which ids have been replied to, and if the
+      // for-await iterator exits abnormally (consumer throws, abort signal),
+      // we flush synthetic replies for the rest before bubbling the error.
+      const repliedIds = new Set<string>();
+      try {
+        for (const call of toolCalls) {
+          const skill = this.skills.get(call.name);
         this.bus.publish({
           actor: this.modelActor,
           kind: 'tool.call',
@@ -454,6 +490,7 @@ export class Session {
         }
 
         this.appendToolResult(call.id, output!);
+        repliedIds.add(call.id);
         this.bus.publish({
           actor: { kind: 'system', subsystem: 'skill-runtime' },
           kind: 'tool.result',
@@ -474,6 +511,18 @@ export class Session {
           error,
           blocked,
         });
+      }
+      } finally {
+        // Flush synthetic replies for any tool_calls that didn't get one
+        // (consumer threw, abort, etc). Without this, the next provider
+        // request would 400 with "insufficient tool messages".
+        for (const call of toolCalls) {
+          if (repliedIds.has(call.id)) continue;
+          this.appendToolResult(
+            call.id,
+            '[x_harness] tool call aborted before completing.',
+          );
+        }
       }
     }
   }

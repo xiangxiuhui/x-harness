@@ -372,3 +372,49 @@ Session 新增字段：`toolRoundsSinceLastHuman`，`pushUser` 重置为 0，每
 
 - 数据攒一波：让 chat 真跑几小时，看 `~/.x_harness/memory/*.jsonl` 里 autonomy 各档分布。命中率若 `human-instructed` < 5% 或 `model-elaborated` > 50%，回来调阈值。
 - evolution queue UI 把 `autonomyReason` 显示出来 → 用户审计每条记录时能直接看到分类依据。
+
+## 2026-06-30 — bugfix: HTTP 400 "insufficient tool messages" after max-rounds cap
+
+### 现象（用户实测）
+
+模型尝试在 `~/.x_harness/skills/research-skill/` 里创建 SKILL.md，触发 Class B 守护、用户拒绝，模型又改用 `cat > FILE << EOF` 再次尝试、又被拒绝，模型继续重试 cat / grep 等无害命令查询保护规则……连发 8 轮 tool-call。第 9 次进入 `streamReply` 时，`rounds >= maxToolRounds (=8)` 命中，Session 直接 `return`。问题：**第 8 轮的 assistant 消息已经写进 `messages`，且带 `toolCalls`，但对应的 `tool` 回复一行都没有**。
+
+下一次 user 输入触发新请求 → DeepSeek 返回：
+
+```
+HTTP 400: An assistant message with 'tool_calls' must be followed by
+tool messages responding to each 'tool_call_id'.
+```
+
+### 根因
+
+`session.ts` `maxToolRounds` 触顶时的 fast-return 违反了 OpenAI/DeepSeek 协议不变量：**每个 `assistant.tool_calls[i].id` 必须对应一条 `tool` 消息**。原来的处理只 push 了一条"max-rounds safety cap"的合成 user 消息，没补 tool 回复。
+
+### 修复（`packages/core/src/session.ts`）
+
+1. **max-rounds 分支**：在写"safety cap"通知前，先为本轮所有 `toolCalls[]` 注入合成 tool 回复 `[x_harness] tool call skipped: max-rounds safety cap hit before execution.`，并通过 bus / memory 也广播，保持事件流完整。
+2. **for-await 异常路径加 try/finally**：原代码逐个 tool call 执行时，若 consumer（chat.ts 的 stdout handler）抛错或 abort 信号触发，剩余 tool_calls 同样会留 unmatched。新增 `repliedIds` 集合 + `finally` 补合成回复。
+3. **regression test** `packages/cli/scripts/e2e-max-rounds-protocol.ts`：fake provider 永远发 tool_call，`maxToolRounds=2`，断言 streamReply 结束后所有 `assistant.toolCalls[].id` 都能在 message buffer 里找到对应 `tool` 回复。
+
+### 顺手 UX 修复（`packages/cli/src/chat.ts`）
+
+原 `promptConfirm` 对未识别输入（如用户实际输入的 `yew`）静默 fall through 到 `deny`。改为最多 3 次重问 + 提示：
+
+```
+?  unrecognised "yew" — please answer y / n / a.
+```
+
+清晰地区分"我故意按 N"和"我手抖"。
+
+### 验证
+
+3 个 e2e 脚本全绿：
+- `e2e-shell-provenance.ts` (25 checks)
+- `e2e-autonomy.ts` (9 checks)
+- `e2e-max-rounds-protocol.ts` (2 checks) ← **新**
+
+### Learning
+
+> 协议不变量在 fast-return 路径上最容易漏。规则：**任何让 streamReply 提前 return 的分支，都必须确保 messages 数组对 provider 是合法的**。
+
+这是 spiral 2 收尾后第一个由真实使用暴露的 P0 bug。值得在 ADR-0011 加一条 "协议一致性责任在 Session 层" 的注释；下次新增 provider 抽象时记得 cover 这个不变量。

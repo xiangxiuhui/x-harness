@@ -387,18 +387,26 @@ async function promptConfirm(
       ? `Allow this action? [y]es / [N]o / [a]llow & pre-approve (${classAIds.join(',')}) : `
       : `Allow this action? [y]es / [N]o : `;
 
-  let answer = '';
-  try {
-    answer = (await rl.question(promptText)).trim().toLowerCase();
-  } catch {
-    return { decision: 'deny' };
-  }
-  if (answer === 'y' || answer === 'yes') return { decision: 'allow' };
-  if (answer === 'a' || answer === 'all' || answer === 'allow') {
-    if (classAIds.length > 0) {
-      return { decision: 'allow-and-preapprove', ruleIds: classAIds };
+  // Loop on unrecognised input so a typo like "yew" doesn't silently deny.
+  // Empty / "n" / "no" still mean deny — that's the [N] default.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let answer = '';
+    try {
+      answer = (await rl.question(promptText)).trim().toLowerCase();
+    } catch {
+      return { decision: 'deny' };
     }
-    return { decision: 'allow' };
+    if (answer === '' || answer === 'n' || answer === 'no') return { decision: 'deny' };
+    if (answer === 'y' || answer === 'yes') return { decision: 'allow' };
+    if (answer === 'a' || answer === 'all' || answer === 'allow') {
+      if (classAIds.length > 0) {
+        return { decision: 'allow-and-preapprove', ruleIds: classAIds };
+      }
+      return { decision: 'allow' };
+    }
+    stdout.write(
+      `${YELLOW}  ?${RESET} unrecognised "${answer}" — please answer y / n${classAIds.length > 0 ? ' / a' : ''}.\n`,
+    );
   }
   return { decision: 'deny' };
 }
