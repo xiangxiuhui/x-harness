@@ -10,3 +10,6 @@
 [submodule "refs/hermes-agent"]
 	path = refs/hermes-agent
 	url = https://github.com/NousResearch/hermes-agent.git
+[submodule "refs/opencode"]
+	path = refs/opencode
+	url = https://github.com/anomalyco/opencode.git
