@@ -8,6 +8,9 @@ import {
   actorBadge,
   loadTerritory,
   buildTerritoryAddendum,
+  loadConfig,
+  compactionFromConfig,
+  makeTiktokenTokenizer,
   type ConfirmDangerHandler,
   type DangerConfirmation,
   type MemorySink,
@@ -223,6 +226,14 @@ export async function runChat(args: string[]): Promise<number> {
   const systemPrompt =
     DEFAULT_SYSTEM_PROMPT + buildTerritoryAddendum(territory) + skillsAddendum(docSkills);
 
+  // ADR-0013 Step 4 — load compaction config from ~/.x_harness/config.json.
+  // Default: enabled when the file is present and contains a `compaction` block
+  // (or implicitly via `{}` if user wants harness defaults). Absent or
+  // `enabled: false` → compaction is off and Session falls back to the
+  // existing max-rounds bail safety net.
+  const xhConfig = loadConfig(xHarnessHome);
+  const compactionBlock = compactionFromConfig(xhConfig);
+
   const session = new Session({
     provider,
     humanUserId: process.env.USER ?? 'human',
@@ -237,6 +248,17 @@ export async function runChat(args: string[]): Promise<number> {
     resumeMessages,
     sessionId: store.filePath.split('/').slice(-1)[0]!.replace(/\.jsonl$/, ''),
     provenance: { xHarnessHome },
+    // No summarizer field → Session auto-builds from provider (auxModel route).
+    ...(compactionBlock
+      ? {
+          compaction: {
+            config: compactionBlock.config,
+            // ADR-0013 Step 5 — bind tiktoken to the active model so token
+            // estimates are accurate (±2% vs ±10% heuristic).
+            tokenize: makeTiktokenTokenizer(provider.defaultModel),
+          },
+        }
+      : {}),
   });
 
   const skillNames = registry.executable().map((s) => s.frontmatter.name);

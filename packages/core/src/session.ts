@@ -20,6 +20,17 @@ import type { ProvenanceAttachResult } from '@x_harness/skills';
 import { ActorBus } from './bus.js';
 import type { Actor, HumanSurface } from './actor.js';
 import { classifyAutonomy } from './autonomy-heuristic.js';
+import {
+  compactIfNeeded,
+  makeProviderSummarizer,
+  type CompactionConfig,
+  type CompactionEvent,
+  type ManagedToolOutput,
+  type Summarizer,
+  type Tokenizer,
+} from './compaction/index.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 export interface SessionOptions {
   provider: Provider;
@@ -57,6 +68,38 @@ export interface SessionOptions {
     xHarnessHome: string;
     /** What kind of executor we're operating as (model, skill resolved per-call). */
     defaultExecutor?: Executor;
+  };
+  /**
+   * ADR-0013 — pre-turn compaction. When provided, Session checks every
+   * round at turn-start and may rewrite `messages` to a smaller equivalent.
+   * The sidecar dir defaults to `<xHarnessHome>/sessions/<sessionId>/tool-outputs/`
+   * if provenance.xHarnessHome is set; otherwise sidecars are not persisted
+   * (truncation still happens, just in-memory).
+   */
+  compaction?: {
+    /**
+     * Tunables (threshold / headN / recentN / toolOutputMaxTokens).
+     * If absent → defaults apply when `enabled` (or summarizer) is set.
+     */
+    config?: Partial<CompactionConfig>;
+    /**
+     * Custom summarizer. When omitted, Session auto-constructs one from the
+     * Provider via `makeProviderSummarizer(provider)` so it transparently
+     * routes to `provider.auxModel` (ADR-0013 F1).
+     *
+     * Pass `null` to fully disable compaction even if other fields are set
+     * (the meta-interface `compactNow()` will also no-op).
+     */
+    summarizer?: Summarizer | null;
+    /** Optional real tokenizer (otherwise heuristic). */
+    tokenize?: Tokenizer;
+    /** Override sidecar dir; default derived from provenance.xHarnessHome. */
+    sidecarDir?: string;
+    /**
+     * Master switch. Default `true` if `compaction` block is present.
+     * Useful to ship a config-only off-switch without removing the block.
+     */
+    enabled?: boolean;
   };
 }
 
@@ -112,6 +155,24 @@ export type DangerConfirmation =
   | { decision: 'allow-and-preapprove'; ruleIds: string[] }
   | { decision: 'deny' };
 
+/**
+ * Resolve the effective Summarizer based on SessionOptions:
+ *   - explicit `null` → disabled
+ *   - `enabled: false` → disabled
+ *   - explicit function → use as-is
+ *   - block exists but no summarizer → auto-build from provider (ADR-0013 F1)
+ *   - no compaction block at all → disabled
+ */
+function resolveSummarizer(opts: SessionOptions): Summarizer | null {
+  const c = opts.compaction;
+  if (!c) return null;
+  if (c.enabled === false) return null;
+  if (c.summarizer === null) return null;
+  if (c.summarizer) return c.summarizer;
+  // Auto-build provider-backed summarizer routed to provider.auxModel when present.
+  return makeProviderSummarizer(opts.provider);
+}
+
 /** Events surfaced by Session.streamReply() (the "outer turn" stream). */
 export type TurnEvent =
   | { kind: 'assistant.delta'; text: string }
@@ -156,6 +217,14 @@ export class Session {
   private classAPreapprovals: Record<string, boolean>;
   private readonly memory?: MemorySink;
   private readonly provenanceConfig?: SessionOptions['provenance'];
+  private readonly compactionOpts?: SessionOptions['compaction'];
+  private readonly sidecarDir?: string;
+  /**
+   * Resolved Summarizer. `null` when compaction is disabled (no opts, or
+   * explicit `summarizer: null`, or `enabled: false`). Otherwise either the
+   * caller-provided one OR an auto-built provider-backed summarizer.
+   */
+  private readonly summarizer: Summarizer | null;
   /** Last human turn text (truncated). Used as IntentProvenance.originatingHumanMessage. */
   private lastHumanMessage?: string;
   /** Ordinal of human turns within this session, 1-based. */
@@ -177,6 +246,13 @@ export class Session {
     this.confirmDanger = opts.confirmDanger;
     this.classAPreapprovals = { ...(opts.dangerContext?.classAPreapprovals ?? {}) };
     this.provenanceConfig = opts.provenance;
+    this.compactionOpts = opts.compaction;
+    this.sidecarDir =
+      opts.compaction?.sidecarDir ??
+      (opts.provenance?.xHarnessHome
+        ? join(opts.provenance.xHarnessHome, 'sessions', this.id ?? 'unknown', 'tool-outputs')
+        : undefined);
+    this.summarizer = resolveSummarizer(opts);
     this.humanActor = {
       kind: 'human',
       userId: opts.humanUserId,
@@ -213,6 +289,173 @@ export class Session {
     });
   }
 
+  /**
+   * ADR-0013 — **meta-interface** for non-threshold-driven compaction.
+   *
+   * Reserved for future triggers driven by:
+   *   - model self-assessment ("I should free up context for the next phase")
+   *   - user memory preferences ("compress aggressively before exiting")
+   *   - skill-emitted hints
+   *
+   * NOT exposed as a CLI command — x_harness is autonomy-first; humans should
+   * never have to micromanage context. Callers that DO want to invoke this
+   * (e.g. a future memory-preference layer) go through this method, which
+   * uses the same `compactIfNeeded` pipeline but tags the event with a
+   * non-`context-limit` reason for telemetry differentiation.
+   *
+   * Returns the emitted event (or null if compaction wasn't applicable —
+   * e.g. summarizer disabled, or pending tool calls in flight).
+   */
+  async compactNow(
+    reason: Exclude<CompactionEvent['reason'], 'context-limit'> = 'user-requested',
+  ): Promise<CompactionEvent | null> {
+    if (!this.summarizer) return null;
+    // Pair-invariant guard — same as turn-start path.
+    const open = new Set<string>();
+    for (const m of this.messages) {
+      if (m.role === 'assistant' && m.toolCalls) {
+        for (const c of m.toolCalls) open.add(c.id);
+      } else if (m.role === 'tool' && m.toolCallId) {
+        open.delete(m.toolCallId);
+      }
+    }
+    if (open.size > 0) return null;
+    try {
+      const compactInput: Parameters<typeof compactIfNeeded>[0] = {
+        messages: this.messages,
+        summarizer: this.summarizer,
+        trigger: 'manual',
+        reason,
+        phase: 'standalone',
+      };
+      if (this.compactionOpts?.config) compactInput.config = this.compactionOpts.config;
+      if (this.compactionOpts?.tokenize) compactInput.tokenize = this.compactionOpts.tokenize;
+      const preTrimmedSidecars = await this.captureSidecarsFromPreState();
+      const result = await compactIfNeeded(compactInput);
+      if (!result.event) return null;
+      this.messages.splice(0, this.messages.length, ...result.messages);
+      await this.persistSidecars(preTrimmedSidecars);
+      this.bus.publish({
+        actor: { kind: 'system', subsystem: 'compaction' },
+        kind: 'context.compacted',
+        payload: result.event satisfies CompactionEvent,
+      });
+      return result.event;
+    } catch (err) {
+      this.bus.publish({
+        actor: { kind: 'system', subsystem: 'compaction' },
+        kind: 'error',
+        payload: {
+          where: 'compactNow',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+      return null;
+    }
+  }
+
+  /**
+   * ADR-0013 — turn-start compaction hook.
+   *
+   * Compaction only runs at a SafeProviderTurnBoundary: every assistant
+   * .toolCall must already have a matching tool reply in the buffer. At
+   * round 1 of a user turn this is always true; at round >= 2 it becomes
+   * true after we appended the tool replies but before issuing the next
+   * provider request. Pre-condition fail → silent no-op (next round may
+   * succeed).
+   */
+  private async maybeCompactBeforeTurn(
+    phase: 'pre-turn' | 'mid-turn',
+  ): Promise<void> {
+    if (!this.summarizer) return;
+    // Pair-invariant guard.
+    const open = new Set<string>();
+    for (const m of this.messages) {
+      if (m.role === 'assistant' && m.toolCalls) {
+        for (const c of m.toolCalls) open.add(c.id);
+      } else if (m.role === 'tool' && m.toolCallId) {
+        open.delete(m.toolCallId);
+      }
+    }
+    if (open.size > 0) return;
+
+    try {
+      const compactInput: Parameters<typeof compactIfNeeded>[0] = {
+        messages: this.messages,
+        summarizer: this.summarizer,
+        trigger: 'auto',
+        reason: 'context-limit',
+        phase,
+      };
+      if (this.compactionOpts?.config) compactInput.config = this.compactionOpts.config;
+      if (this.compactionOpts?.tokenize) compactInput.tokenize = this.compactionOpts.tokenize;
+
+      // Capture pre-state for sidecar offload (truncated tool outputs are
+      // already in pre-state but no longer carry their full content after
+      // trimToolOutput; we run the same fn locally to recover them).
+      const preTrimmedSidecars = await this.captureSidecarsFromPreState();
+
+      const result = await compactIfNeeded(compactInput);
+      if (result.event) {
+        // Replace in place to preserve array identity for external refs.
+        this.messages.splice(0, this.messages.length, ...result.messages);
+        await this.persistSidecars(preTrimmedSidecars);
+        this.bus.publish({
+          actor: { kind: 'system', subsystem: 'compaction' },
+          kind: 'context.compacted',
+          payload: result.event satisfies CompactionEvent,
+        });
+      }
+    } catch (err) {
+      // Compaction must NEVER break a turn.
+      this.bus.publish({
+        actor: { kind: 'system', subsystem: 'compaction' },
+        kind: 'error',
+        payload: {
+          where: 'maybeCompactBeforeTurn',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  /**
+   * Compute sidecars by re-running the trim step against current messages
+   * BEFORE compactIfNeeded mutates them. Cheap (linear scan) and avoids
+   * threading the sidecar list through the compaction signature.
+   */
+  private async captureSidecarsFromPreState(): Promise<ManagedToolOutput[]> {
+    if (!this.sidecarDir) return [];
+    const { trimToolOutputsInMessages } = await import('./compaction/index.js');
+    const maxTokens = this.compactionOpts?.config?.toolOutputMaxTokens ?? 4096;
+    const tok = this.compactionOpts?.tokenize;
+    const { sidecars } = tok
+      ? trimToolOutputsInMessages(this.messages, maxTokens, tok)
+      : trimToolOutputsInMessages(this.messages, maxTokens);
+    return sidecars;
+  }
+
+  /** Persist sidecar files (full tool outputs). Best-effort. */
+  private async persistSidecars(sidecars: ManagedToolOutput[]): Promise<void> {
+    if (sidecars.length === 0 || !this.sidecarDir) return;
+    try {
+      await mkdir(this.sidecarDir, { recursive: true });
+      for (const sc of sidecars) {
+        const file = join(this.sidecarDir, `${sc.callId}.txt`);
+        await writeFile(file, sc.fullContent, 'utf8');
+      }
+    } catch (err) {
+      this.bus.publish({
+        actor: { kind: 'system', subsystem: 'compaction' },
+        kind: 'error',
+        payload: {
+          where: 'persistSidecars',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
   pushUser(content: string): void {
     this.messages.push({ role: 'user', content });
     this.humanTurnOrdinal += 1;
@@ -235,6 +478,8 @@ export class Session {
 
     while (true) {
       rounds++;
+      // ADR-0013 — pre-turn compaction (no-op when not configured / under threshold).
+      await this.maybeCompactBeforeTurn(rounds === 1 ? 'pre-turn' : 'mid-turn');
       const req: ChatRequest = {
         messages: this.messages,
         ...(useTools ? { tools } : {}),

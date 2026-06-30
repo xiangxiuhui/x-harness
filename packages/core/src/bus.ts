@@ -14,6 +14,7 @@ export type ActorEventKind =
   | 'tool.result'
   | 'session.start'
   | 'session.end'
+  | 'context.compacted'
   | 'error';
 
 export interface ActorEvent {

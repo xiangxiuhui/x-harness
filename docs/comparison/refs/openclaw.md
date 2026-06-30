@@ -1,15 +1,29 @@
 # Comparison — openclaw
 
 > 上游：[openclaw/openclaw](https://github.com/openclaw/openclaw)
-> 锁定 commit：`95c256fa98` (`v2026.4.19-beta.2-27635-g95c256fa98`)
+> 锁定 commit：`3d4b7cade9` (`v2026.4.19-beta.2-30364`)
 > 主语言：TypeScript（pnpm workspace + tsdown 构建）
 > 仓库定位：**多渠道 personal AI assistant**，对外形象 "OpenClaw is the AI that actually does things"。
+> **主战场象限：L1 loop（`tool-call-repair`）+ 工程结构样板**
 
 ## TL;DR
 
 OpenClaw 是 4 个项目里**对 x_harness 工程结构最有借鉴价值**的：纯 TS 单体、pnpm 多包、清晰的 `packages/` + `extensions/` 分层、超大量（144+）的 extension 插件清单。它的 Vision 文档讲的"core 窄腰、能力外置、setup 优先、安全是 deliberate tradeoff"和我们的方向高度同构。
 
 它不像 hermes 那样押"自学习"，更像一个**集大成的、规整的 personal assistant 平台**。
+
+## 四象限映射（Harness 框架）
+
+> 框架定义见 [`harness-framework.md`](./harness-framework.md)。
+
+| 象限 | 评级 | 关键文件 / 借鉴点 |
+|---|---|---|
+| **L1 loop**（compaction + 协议合法性） | ★★ | `packages/agent-core/src/harness/compaction/`（882 行，branch + main 两路总结 + trailing-tool-result 测试）；**`packages/tool-call-repair`** 与我们 max-rounds bug 同位 |
+| **L1 ctx**（small CH 建模） | ★ | `packages/agent-core/src/harness/session/session.ts` `buildSessionContext`；中规中矩 |
+| **L2 loop**（RSI） | ✗ | 144 extensions 是 plugin curation，不是 RSI |
+| **L2 ctx**（数字分身） | ★ | `packages/memory-host-sdk`（QMD 查询 + embeddings 多 engine）；memory 槽位独占；但能力/经验没打包成可移植单元 |
+
+**OpenClaw 的主战场是 L1 loop 实现 + TS 工程结构**（22 packages + 144 extensions 的切包样板）。
 
 ## 仓库形态速览
 

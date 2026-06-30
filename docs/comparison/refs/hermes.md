@@ -1,9 +1,10 @@
 # Comparison — hermes-agent
 
 > 上游：[NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
-> 锁定 commit：`426f321e8` (`v2026.6.5-1259-g426f321e8`)
+> 锁定 commit：`fa3ab2ffd0` (`v2026.6.19-1441`)
 > 主语言：Python（Electron / TUI 部分含 TS）
 > 仓库定位：**自学习的、跨终端的个人 AI agent**，强调"learning loop"与多消息平台接入。
+> **主战场象限：L2 loop（最佳样板）+ L1 loop（最重 compaction）**
 
 ## TL;DR
 
@@ -16,6 +17,21 @@ Hermes 是 4 个项目里**最贴近 x_harness 终极目标**的一个：
 - AGENTS.md 提出"core 是窄腰、能力在边缘"——和 x_harness 的 R1–R6 思想一致
 
 x_harness **不抄它的代码**，但它的"边界划分""学习闭环""平台中立"三件事是直接的方法论参照。
+
+## 四象限映射（Harness 框架）
+
+> 框架定义见 [`harness-framework.md`](./harness-framework.md)。
+
+| 象限 | 评级 | 关键文件 / 借鉴点 |
+|---|---|---|
+| **L1 loop**（compaction 实现） | ★★★ | `agent/context_compressor.py`（2788 行）：head/tail 保护 + 中段总结 + tool-output pruning 预处理 + 失败冷却（cooldown）+ "filter-safe summarizer preamble" |
+| **L1 ctx**（small CH 建模） | ★ | 散在 `prompt_builder.py`；不变量是文档级（"prompt cache 神圣不可侵犯"） |
+| **L2 loop**（RSI） | ★★★ **最佳样板** | `agent/background_review.py` + `agent/curator.py` + `agent/skill_bundles.py`：真闭环（trajectory → review → skill 更新 → 下次 session 自动加载） |
+| **L2 ctx**（数字分身） | ★★ | `HERMES_HOME` profile = 整目录分身；`~/.hermes/skill-bundles/*.yaml` 显式可移植；`MemoryProvider` 单插槽不变量 |
+
+**Hermes 的主战场是 L2 loop + L1 loop**——它是五个 ref 里唯一把 RSI 闭环真正跑通的。
+
+x_harness **不抄它的代码**，但 **L2 loop 方法论 + L1 loop 取舍 + memory 单插槽**都是直接的方法论参照。
 
 ## 仓库形态速览
 

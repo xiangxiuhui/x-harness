@@ -1,15 +1,30 @@
 # Comparison — claude-code
 
 > 上游：[anthropics/claude-code](https://github.com/anthropics/claude-code)
-> 锁定 commit：`423563cfe` (`v2.1.181-1-g423563c`)
+> 锁定 commit：`c80896ca84` (`v2.1.196`)
 > 主语言：本仓库**只放官方插件 + 文档**，CLI 本体已不在 npm（installer 安装）；本仓库可见的是 **Plugin 标准 + 官方插件示范**。
 > 仓库定位：**agentic coding tool 的官方插件市场 + 插件机制示范**。
+> **主战场象限：L2 ctx 能力层（plugin 五件套，最佳样板）**
 
 ## TL;DR
 
 claude-code 这个 git 仓库**几乎不是 CLI 源码**——CLI 本体已迁出。我们能从它里面拿走的，是 **Plugin 形态规范** 和 **12 个官方 plugin 的具体写法**。
 
 这套 Plugin 形态（commands / agents / skills / hooks / .mcp.json）是目前业界最干净、最有"标准潜质"的代理扩展协议之一。**x_harness 的 skill 形态会贴它对齐。**
+
+## 四象限映射（Harness 框架）
+
+> 框架定义见 [`harness-framework.md`](./harness-framework.md)。
+
+| 象限 | 评级 | 关键文件 / 借鉴点 |
+|---|---|---|
+| **L1 loop**（compaction） | ✗ | CLI 闭源；只有 `/compact` 斜杠命令文档（用户手动触发）—— **反例：纯人工不可取** |
+| **L1 ctx**（small CH 建模） | ✗ | 不可见 |
+| **L2 loop**（RSI） | ★ | skills 是 git-managed markdown 资产，靠人工 curate；hooks 是被动 trigger —— 算"git as RSI substrate" |
+| **L2 ctx**（数字分身能力层） | ★★★ **最佳样板** | `plugins/<name>/.claude-plugin/plugin.json` + `commands/agents/skills/hooks/.mcp.json` 五件套目录 = 一个可分发能力包 |
+
+**claude-code 的主战场是 L2 ctx 能力层布局**——五件套是数字分身"皮肤层"的事实标准。
+但它**只携带能力，不携带经验**——这就是为什么我们要把 L2 ctx 拆成"能力层 + 经验层"两个独立子层。
 
 ## 仓库形态速览
 

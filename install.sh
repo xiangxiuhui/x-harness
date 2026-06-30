@@ -222,6 +222,18 @@ installer_mode: $MODE
 VEOF
 ok "已写 $X_HOME/VERSION"
 
+# ── config.example.json（ADR-0013 compaction 模板，可选启用）─────────────
+# 每次安装/升级都刷新模板，但不动用户实际用的 $X_HOME/config.json。
+if [[ -f "$SRC_DIR/examples/config.example.json" ]]; then
+  cp "$SRC_DIR/examples/config.example.json" "$X_HOME/config.example.json"
+  if [[ -f "$X_HOME/config.json" ]]; then
+    ok "config.json 已存在（你的配置）；模板刷新到 config.example.json"
+  else
+    ok "已放模板：$X_HOME/config.example.json"
+    say "    ${DIM}启用对话压缩：cp $X_HOME/config.example.json $X_HOME/config.json${RESET_C}"
+  fi
+fi
+
 # ── shell function (not alias) ───────────────────────────────────────────
 # 为什么是 function 不是 alias：
 # alias x='(cd ... && pnpm -s x)' 展开后是 `(cd ... && pnpm -s x) version` —

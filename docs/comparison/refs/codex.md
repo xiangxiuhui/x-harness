@@ -1,9 +1,10 @@
 # Comparison — codex (OpenAI)
 
 > 上游：[openai/codex](https://github.com/openai/codex)
-> 锁定 commit：`c73296a0f` (`python-v0.1.0b3-482-gc73296a0f0`)
+> 锁定 commit：`cfead68e5d` (`codex-zsh-v0.1.0-64`)
 > 主语言：**Rust（codex-rs，主体）+ TypeScript（codex-cli 旧版 + sdk）**
 > 仓库定位：**OpenAI 官方 coding agent CLI**，本地跑、单二进制、Bazel/Cargo 双构建、跨 OS sandbox 一等公民。
+> **主战场象限：L2 ctx trajectory（rollout 独立 crate）+ L1 loop（最完整 taxonomy）+ Rust 内核样板**
 
 ## TL;DR
 
@@ -17,6 +18,19 @@ codex 是 4 个项目里**最贴近 x_harness "TS 外壳 + Rust 内核"目标形
 - 有 `rollout` / `rollout-trace`（轨迹/回放，对应我们的 audit log）
 
 **这是 x_harness Rust 内核的最大借鉴源。**
+
+## 四象限映射（Harness 框架）
+
+> 框架定义见 [`harness-framework.md`](./harness-framework.md)。
+
+| 象限 | 评级 | 关键文件 / 借鉴点 |
+|---|---|---|
+| **L1 loop**（compaction） | ★★★ | `codex-rs/core/src/compact.rs`（714 行）+ `compact_token_budget.rs` + `compact_remote.rs` + `state/auto_compact_window.rs`（共 1499 行）；**`codex-rs/analytics/src/facts.rs` 的 4 维 taxonomy**：`CompactionTrigger`（Manual/Auto）× `CompactionReason`（UserRequested/ContextLimit/ModelDownshift/CompHashChanged）× `CompactionPhase`（Standalone/PreTurn/MidTurn）× `CompactionStrategy`（Memento/PrefixCompaction）—— 五个 ref 里**唯一把 compaction 完整分类化**的 |
+| **L1 ctx**（small CH 建模） | ★ | `WorldState`（系统瞬时状态快照）+ `TurnContext` + `responses_metadata` 关联 turn；中规中矩 |
+| **L2 loop**（RSI） | ✗ | 无反馈环；但 `rollout-trace` 是最好的 RSI 数据底座 |
+| **L2 ctx**（trajectory） | ★★★ **最佳样板** | **`codex-rs/rollout/` 是独立 crate**：JSONL append-only + `state_db`（CQRS：事件日志 vs 派生快照）+ `compression.rs`（旧 rollout 可压缩归档）+ `SessionMeta` / `ThreadItem` 标准化—— x_harness LCH `experience/rollouts/` 直接对照 |
+
+**Codex 的主战场是 L2 ctx trajectory + L1 loop taxonomy + Rust 内核能力**——三块都是最佳样板。
 
 ## 仓库形态速览
 

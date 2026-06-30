@@ -11,9 +11,10 @@
     "build": "tsc -b"
   },
   "dependencies": {
+    "@x_harness/danger": "workspace:*",
+    "@x_harness/provenance": "workspace:*",
     "@x_harness/provider": "workspace:*",
     "@x_harness/skills": "workspace:*",
-    "@x_harness/danger": "workspace:*",
-    "@x_harness/provenance": "workspace:*"
+    "js-tiktoken": "^1.0.21"
   }
 }

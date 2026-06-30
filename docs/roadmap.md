@@ -5,8 +5,19 @@
 2. **最新** —— 用最新的 model / 工具链
 3. **可使用闭环** —— 自己能在日常工作里用起来
 
-> 当前状态：**螺旋 1 已 close**（2026-06-24, commit `043cf3d`）。
+> 当前状态：**螺旋 2 已 close**（2026-06-29）。
 > 详细的"代码 vs ADR"现状见 [`docs/status.md`](status.md)。
+>
+> **从螺旋 3 起，本文件用 Harness 框架 4 象限（[`comparison/harness-framework.md`](comparison/harness-framework.md)）来标注每一螺旋"动了哪几格"**。
+
+> 螺旋 0–2 的象限映射（事后归类）：
+>
+> | 螺旋 | L1 loop | L1 ctx | L2 loop | L2 ctx | model |
+> |---|---|---|---|---|---|
+> | 0 | — | — | — | — | — |
+> | 1 | tool-calling loop v0 | 隐式 | — | JSONL audit log | DeepSeek |
+> | 2 | + max-rounds bail | — | "待复盘"采集 | + evolution.jsonl + on-disk skills | DeepSeek |
+> | 3（规划） | **预防式 compaction + taxonomy** | **`ContextEpoch` 等类型** | — | **`actors/<id>/` 数字分身整合** | + 1 家 |
 
 ---
 
@@ -101,12 +112,17 @@
 
 ---
 
-## 螺旋 3：跨 OS + MCP + 进化产物转化
+## 螺旋 3：Harness 框架落地（L1 ctx 形式化 + L2 ctx 整合）+ 跨 OS
 
+> 象限：**L1 loop（预防式 compaction）+ L1 ctx（形式化建模）+ L2 ctx（数字分身整合）**
+
+- **L1 loop**：把 opencode `compactIfNeeded` 25 行 + codex 4 维 taxonomy 落地为 `packages/core/src/session/compaction/`
+- **L1 ctx**：引入 `ContextEpoch` / `SafeProviderTurnBoundary` / `BaselineSystemContext` 类型（参考 [`comparison/cross-analysis-context-management.md`](comparison/cross-analysis-context-management.md)）
+- **L2 ctx**：把散落的 `~/.x_harness/{memory,evolution,skills}/` 整合为 `~/.x_harness/actors/<id>/`，落地 `hydrate/append/writeMemory` 三动词接口（参考 [`comparison/large-context-harness.md`](comparison/large-context-harness.md)）
 - Linux 原生跑通 + Windows native 编译通过
 - MCP client（接管"网络触达的工具环境"）
 - danger guard 翻译到 Rust（spiral 2 仍是 TS）
-- evolution 采集物 → skill 草稿（半自动）
+- evolution 采集物 → skill 草稿（半自动，**L2 loop 第一步**）
 - 第二家 provider（Anthropic / 本地 ollama）
 
 ---

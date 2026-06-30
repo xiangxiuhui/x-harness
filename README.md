@@ -27,6 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/xiangxiuhui/x-harness/main/install.
 ├── memory/           # 你的 session JSONL（installer 不动）
 ├── territory.yaml    # 领地配置
 ├── skills/           # 你的 skills
+├── config.json       # 可选：对话压缩等配置（cp config.example.json 来启用）
 └── VERSION           # 当前装的 commit
 
 完成后：

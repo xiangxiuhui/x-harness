@@ -10,6 +10,8 @@ export interface DeepSeekConfig {
   apiKey: string;
   baseUrl?: string;
   defaultModel?: string;
+  /** ADR-0013 F1 — cheap auxiliary model (compaction etc.). */
+  auxModel?: string;
 }
 
 /**
@@ -20,6 +22,7 @@ export interface DeepSeekConfig {
 export class DeepSeekProvider implements Provider {
   readonly name = 'deepseek';
   readonly defaultModel: string;
+  readonly auxModel?: string;
   private readonly apiKey: string;
   private readonly baseUrl: string;
 
@@ -27,6 +30,9 @@ export class DeepSeekProvider implements Provider {
     this.apiKey = cfg.apiKey;
     this.baseUrl = (cfg.baseUrl ?? 'https://api.deepseek.com').replace(/\/$/, '');
     this.defaultModel = cfg.defaultModel ?? 'deepseek-chat';
+    // deepseek-chat is already cheap; auxModel only diverges from defaultModel
+    // when the caller routes main traffic to deepseek-reasoner.
+    if (cfg.auxModel) this.auxModel = cfg.auxModel;
   }
 
   async *chat(req: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatChunk> {
@@ -192,5 +198,6 @@ export function createDeepSeekProviderFromEnv(): DeepSeekProvider {
     apiKey,
     baseUrl: process.env.DEEPSEEK_BASE_URL,
     defaultModel: process.env.DEEPSEEK_MODEL,
+    auxModel: process.env.DEEPSEEK_AUX_MODEL,
   });
 }

@@ -5,7 +5,7 @@
 
 ## Context
 
-[`docs/comparison/claude-code.md`](../comparison/claude-code.md) 已经确认：claude-code 的 Plugin 五件套（**commands / agents / skills / hooks / .mcp.json**）是当前最干净、最有标准潜质的代理扩展协议。
+[`docs/comparison/refs/claude-code.md`](../comparison/refs/claude-code.md) 已经确认：claude-code 的 Plugin 五件套（**commands / agents / skills / hooks / .mcp.json**）是当前最干净、最有标准潜质的代理扩展协议。
 hermes 的 skill 形态（YAML frontmatter + body，对齐 [agentskills.io](https://agentskills.io)）与之同构。
 
 x_harness 在第一螺旋只需要"skill"，但"skill 长什么样"不能临时拍——日后扩展到 commands/agents/hooks/mcp 时不能改格式。

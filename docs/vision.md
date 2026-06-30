@@ -100,6 +100,40 @@ x_harness 的 UI 形态会非常多元（CLI / 浏览器插件 / System Super Ap
 进化的"边界"：
 - 进化产物本身也是 artifact，受 actor 标签管理；人类可看、可改、可回滚。
 
+## 6.5. 数字分身 — RSI 螺旋的物质基础
+
+> 术语权威：[`comparison/harness-framework.md`](comparison/harness-framework.md) §1 (L2 ctx)。
+> 设计交付：[`comparison/large-context-harness.md`](comparison/large-context-harness.md)。
+
+§6 描述了"进化的原料和产物"。但要让这个进化闭环成立，**全部原料和产物必须存在于同一个可移植的容器里**。这个容器在 Harness 框架里叫 **L2 ctx / LARGE context harness**，对用户而言它是一个**数字分身**：
+
+```
+~/.x_harness/actors/<actor-id>/
+  ├─ actor.json              # manifest（含 parent，用于 RSI fork-tree）
+  ├─ capabilities/           # 能力层 ≈ claude-code 五件套（commands/agents/skills/hooks/.mcp.json）
+  ├─ experience/             # 经验层
+  │   ├─ rollouts/           # codex 风 JSONL append-only 事件流
+  │   ├─ memory/             # agent 显式写入的记忆条目
+  │   └─ workspaces/         # opencode 风 workspace 子容器
+  ├─ knowledge/              # 用户/世界输入的事实，非 agent 产生
+  └─ preferences/            # 个性化偏好
+```
+
+**为什么这个分身设计是 North Star 的物质基础**：
+
+1. **可导出**：用户可以把整个 actor 目录打包、迁移、备份；这是"AI 是用户的"而不是"用户是 AI 服务的用户"。
+2. **可 fork**：`actor.json.parent` 字段建立分身演化的 fork-tree；RSI 在数据层就是 fork-and-merge。
+3. **与任何 loop 解耦**：今天用 spiral-3 的 TS loop 跑，明天用 spiral-N 的 Rust 内核跑，分身原样可用；这是寄居态→phase∞ 过渡的**唯一**不变量。
+4. **memory ≠ knowledge**：memory 是 agent 自己产出（行为残留），knowledge 是用户/世界输入（事实）；不混淆才能让 RSI 闭环安全。
+
+**与 loop 的接口只有三个动词**（强迫 loop 保持无状态）：
+
+```typescript
+LCH.hydrate(opts)        // 给本次 loop 启动喂一份初始上下文
+LCH.append(event)        // 把 turn 结束时的事件写入 rollout
+LCH.writeMemory(note)    // agent 显式记忆写入
+```
+
 ## 7. 跨 OS 路线
 
 - **第一螺旋**：macOS 跑通；Linux 通过镜像验证可运行。

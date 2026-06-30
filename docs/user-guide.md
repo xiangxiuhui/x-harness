@@ -184,6 +184,11 @@ REST（同源）：
 
 ```
 ~/.x_harness/
+├── src/                        # 源码（installer 管）
+├── VERSION                     # 当前装的 commit
+├── activate.sh                 # source 它让 `x` 命令在 shell 里生效
+├── config.example.json         # ADR-0013 对话压缩配置模板（installer 每次刷新）
+├── config.json                 # 你的实际配置（可选；§4.1）
 ├── territory.yaml              # 你的领地配置（§5）
 └── memory/
     ├── index.jsonl             # 每个 session 一行：{sessionId, startedAt, endedAt, userTurns}
@@ -205,6 +210,52 @@ REST（同源）：
 
 **删一个 `sess-*.jsonl` = 永久遗忘那次对话**（含 feedback、provenance 记录）。
 **删 `territory.yaml`** → 下次 `x chat` 自动重生默认。
+
+### 4.1 对话压缩（context compaction，ADR-0013）
+
+长对话累积 token 到上下文窗口 70% 时会触发后台压缩：把"中段"对话替换成一个简短摘要，保留头部（system prompt + 早期决策）和最近几轮。**用户感觉不到、模型继续工作。**
+
+> 设计原则：x_harness **自主判断**何时压缩，**不暴露 CLI 命令**逼用户管理上下文。
+> 详见 [ADR-0013](decisions/0013-compaction-strategy.md) 与 [dogfood 报告](dogfood-2026-06-30-compaction.md)。
+
+**怎么启用：**
+
+```bash
+cp ~/.x_harness/config.example.json ~/.x_harness/config.json
+$EDITOR ~/.x_harness/config.json
+```
+
+`config.json` schema（所有字段可选，全用默认就空 `compaction: {}`）：
+
+```json
+{
+  "compaction": {
+    "enabled": true,
+    "threshold": 0.7,
+    "contextWindow": 64000,
+    "headN": 5,
+    "recentN": 10,
+    "toolOutputMaxTokens": 4096
+  }
+}
+```
+
+**推荐：配 cheap aux model 让压缩省钱**：
+
+```bash
+# ~/.x_harness/src/.env
+DEEPSEEK_MODEL=deepseek-reasoner       # 主对话用贵的
+DEEPSEEK_AUX_MODEL=deepseek-chat       # 压缩用便宜的
+```
+
+`DEEPSEEK_AUX_MODEL` 一旦设上，所有压缩调用自动走它（不影响主对话）。
+
+**可观测性：**
+
+- 每次压缩在 session JSONL 里 emit 一条 `kind: "context.compacted"` 事件，记录 `tokensBefore/After`、`strategy`、`headKept/recentKept`、`durationMs`
+- 大于阈值的工具输出（grep / read_file 等）会被换成短摘要，原文落到 `~/.x_harness/sessions/<sid>/tool-outputs/<seq>.txt`
+
+**不启用怎样**：不放 `config.json` 或 `enabled: false` → 压缩关闭，Session 退回原有的 max-rounds 兜底。
 
 ---
 

@@ -67,6 +67,14 @@ export interface ChatChunk {
 export interface Provider {
   readonly name: string;
   readonly defaultModel: string;
+  /**
+   * ADR-0013 F1 — cheap model for auxiliary tasks (compaction summary,
+   * classification, intent extraction). If absent, callers SHOULD fall
+   * back to `defaultModel`. Set explicitly by the provider when a cheaper
+   * tier of the same family is available (e.g. `deepseek-chat` while main
+   * conversation uses `deepseek-reasoner`).
+   */
+  readonly auxModel?: string;
   chat(req: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatChunk>;
 }
 

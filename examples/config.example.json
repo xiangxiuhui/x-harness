@@ -1,0 +1,11 @@
+{
+  "$schema_note": "ADR-0013 — copy to ~/.x_harness/config.json and tweak. All keys optional.",
+  "compaction": {
+    "enabled": true,
+    "threshold": 0.7,
+    "contextWindow": 64000,
+    "headN": 5,
+    "recentN": 10,
+    "toolOutputMaxTokens": 4096
+  }
+}

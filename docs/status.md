@@ -14,6 +14,14 @@
 | 2026-06-25 下午 | greet 重写为 anthropic 标准形态（SKILL.md body + scripts/greet.sh，无 handler）|
 | 2026-06-26 下午 | spiral 2/2 范围审视：写下 ADR-0009 (Intent Provenance) + ADR-0010 (World Awareness) + vision.md North Star 段；落地 territory.yaml 默认配置 + loader |
 | 2026-06-26 傍晚 | spiral 2/3 v0：`@x_harness/web` 包 + `x web` 子命令；read-only Web UI（sessions/territory/skills + SSE live tail）；ADR-0011 钉死 Surface Parity 原则 |
+| 2026-06-30 | spiral-2 close → spiral-3 概念基线：Harness 框架（双层 × 双轴）落地为术语权威 + 4 象限对照（[`comparison/harness-framework.md`](comparison/harness-framework.md)）；ADR README 按象限重组；ADR-0013（Compaction Strategy）+ ADR-0014（Context Epoch 类型系统）Proposed |
+| 2026-06-30 | ADR-0013 Step 1 落地：`packages/core/src/compaction/`（token-estimator + tool-output + pair-tool-calls + compact 入口），43 单测全绿，typecheck 通过；尚未接入 `session.ts`（Step 2） |
+| 2026-06-30 | ADR-0013 Step 2 落地：`Session` 接入 turn-start `maybeCompactBeforeTurn` 钩子 + sidecar 持久化（`<xHarnessHome>/sessions/<sid>/tool-outputs/<callId>.txt`）+ `context.compacted` 事件；新增 `session-compaction.test.ts` 12 个集成测试（fake Provider），总计 55 测试全绿 |
+| 2026-06-30 | ADR-0013 Step 3 落地：`Provider.auxModel`（接口 + DeepSeek + `DEEPSEEK_AUX_MODEL` env）；`makeProviderSummarizer` 自动路由到 auxModel；Session 在未传 summarizer 时自动用 provider 构造一个；新增 `compactNow(reason)` 元接口（保留给模型/记忆偏好触发，**不暴露 CLI**）；新增 `aux-model.test.ts` 21 个测试，总计 76 全绿 |
+| 2026-06-30 | ADR-0013 Step 4 落地：`<xHarnessHome>/config.json` 配置加载（`loadConfig` + `compactionFromConfig`）；`chat.ts` 接入；`examples/config.example.json` 示例；新增 `config.test.ts` 16 测试，总计 **92 全绿** |
+| 2026-06-30 | ADR-0013 **Step 5 落地（spiral-3 P0 收官）**：`js-tiktoken` 真实 BPE tokenizer adapter（`makeTiktokenTokenizer`），encoding-keyed 缓存共享、未知 model 回落 o200k、加载失败回落 heuristic；`chat.ts` 默认绑定 `provider.defaultModel`；新增 `tiktoken-adapter.test.ts` 16 测试。**总计 108 测试全绿，ADR-0013 P0 五步全部完成** |
+| 2026-06-30 | ADR-0013 **真实环境 dogfood**：用 `deepseek-reasoner`（主）+ `deepseek-chat`（auxModel）跑 6+8 轮长对话；端到端验证 config→Session→auxModel→tiktoken→compaction→sidecar→pair-invariant 全链路。发现 summary 只覆盖最后一次 exchange 的 prompt 缺陷，重写 `FILTER_SAFE_PREAMBLE` 加入 chronological multi-turn coverage + per-turn budget + entity preservation；新增 4 个 preamble 防回归测试。重跑验证 summary 覆盖全部 turn、命名实体保留、当前问题被标出。报告：`docs/dogfood-2026-06-30-compaction.md`。**总计 112 测试全绿** |
+| 2026-06-30 | ADR-0013 **安装升级收尾**：installer 每次安装/升级自动刷新 `~/.x_harness/config.example.json`（不动用户的 `config.json`）；`.env.example` 加入 `DEEPSEEK_AUX_MODEL` 注释模板；`docs/user-guide.md` §4.1 新增对话压缩使用说明；`README.md` 目录树补 `config.json`。本地全量 dry-install + 二次安装（upgrade 路径）验证 config.json 保持不变。准备明天端到端实测验收。 |
 
 这是螺旋开发的正确暴露——错误前提通过真实使用浮出水面，回退一个 commit 远比堆十个 commit 在错的假设上便宜。
 
