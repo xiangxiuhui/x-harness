@@ -13,3 +13,4 @@
 [submodule "refs/opencode"]
 	path = refs/opencode
 	url = https://github.com/anomalyco/opencode.git
+	branch = dev
