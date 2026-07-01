@@ -129,8 +129,34 @@ interface ActorEvent<K extends string = string, P = unknown> {
 
 Do not redesign the whole event system immediately. The next safe step is:
 
-1. Add event ids to `ActorBus` emitted events.
-2. Add a small event registry/classifier (`eventDurability(kind)`).
-3. Move CLI bus→JSONL persistence from ad hoc `if` checks to classifier-based routing.
-4. Emit `context.snapshot.persisted` when `persistSnapshot()` writes a file.
-5. Keep high-volume diagnostics as bounded health buffers, not JSONL.
+1. Add event ids to `ActorBus` emitted events. ✅ already present
+2. Add a small event registry/classifier (`actorEventDurability(kind)`). ✅ landed
+3. Move CLI bus→JSONL persistence from ad hoc `if` checks to classifier-based routing. ✅ landed
+4. Emit `context.snapshot.persisted` when `persistSnapshot()` writes a file. ✅ landed
+5. Keep high-volume diagnostics as bounded health buffers, not JSONL. ⏭️ next
+
+## Manual validation loop
+
+To verify the full runtime→bus→JSONL→digest loop:
+
+```bash
+# Non-interactive smoke test (does not call provider)
+x chat --snapshot-and-exit
+x sessions show <printed-session-id> | grep 'snapshot persisted'
+
+# Or inside a real interactive chat:
+x chat
+# note the printed session id, e.g. sess-abc123
+> /snapshot
+> /exit
+x sessions show sess-abc123 | grep 'snapshot persisted'
+ls ~/.x_harness/sessions/sess-abc123/snapshots/
+```
+
+Expected:
+
+- CLI prints `context snapshot persisted: ...` from the bus subscriber
+- CLI prints `snapshot persisted: <file>` from the command handler
+- `x sessions show` includes a `📸 snapshot persisted ...` line
+- the snapshot JSON file exists under `sessions/<sid>/snapshots/`
+

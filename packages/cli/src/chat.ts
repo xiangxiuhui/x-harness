@@ -75,6 +75,7 @@ const BOLD_RED = '\x1b[1;31m';
 
 export async function runChat(args: string[]): Promise<number> {
   let resumeId: string | undefined;
+  let snapshotAndExit = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === '--resume') {
@@ -82,6 +83,8 @@ export async function runChat(args: string[]): Promise<number> {
       i++;
     } else if (a.startsWith('--resume=')) {
       resumeId = a.slice('--resume='.length);
+    } else if (a === '--snapshot-and-exit') {
+      snapshotAndExit = true;
     } else {
       stderr.write(`unknown chat arg: ${a}\n`);
       return 2;
@@ -327,6 +330,23 @@ export async function runChat(args: string[]): Promise<number> {
   const territoryNote = territory.generatedDefault
     ? `${YELLOW}created default${RESET}`
     : `${territory.zonePaths.length} zone(s)`;
+
+  if (snapshotAndExit) {
+    const snap = session.takeSnapshot();
+    const file = await session.persistSnapshot();
+    if (file) {
+      stdout.write(
+        `${GREEN}snapshot persisted${RESET}: ${file}\n` +
+          `  session=${session.id}, messages=${snap.messageCount}, estimatedTokens=${snap.estimatedTokens}, pendingToolCalls=${snap.pendingToolCalls}, compactions=${snap.compactionCount}\n`,
+      );
+    } else {
+      stdout.write(`${YELLOW}snapshot not persisted (missing xHarnessHome or write failed)${RESET}\n`);
+    }
+    await store.close('bye', 0);
+    stdout.write(`bye.  ${DIM}(audit: ${store.filePath})${RESET}\n`);
+    return file ? 0 : 1;
+  }
+
   stdout.write(
     `\n${actorBadge(session.humanActor)} ↔ ${actorBadge(session.modelActor)}\n` +
       `(session ${session.id})\n` +
@@ -335,7 +355,7 @@ export async function runChat(args: string[]): Promise<number> {
       `(territory: ${territoryNote}, ${territory.path})\n` +
       `(guard: ADR-0005, home=${xHarnessHome})\n` +
       `(compaction: ${compactionBlock ? `${compactionBlock.config.threshold} threshold, ${compactionBlock.config.contextWindow} ctx window` : 'off (no config)'})\n` +
-      `(commands: exit | /skills | /help    keys: Ctrl+C aborts reply, Ctrl+D exits)\n\n`,
+      `(commands: exit | /skills | /snapshot | /help    keys: Ctrl+C aborts reply, Ctrl+D exits)\n\n`,
   );
 
   let inFlight: AbortController | null = null;
@@ -368,6 +388,7 @@ export async function runChat(args: string[]): Promise<number> {
       stdout.write(
         '  exit | quit | bye | q | :q       — leave\n' +
           '  /skills                          — list available skills\n' +
+          '  /snapshot                        — persist a runtime context snapshot\n' +
           '  Ctrl+C during reply              — abort the current reply\n' +
           '  Ctrl+C at prompt                 — leave\n' +
           '  Ctrl+D                           — leave\n',
@@ -380,6 +401,19 @@ export async function runChat(args: string[]): Promise<number> {
         stdout.write(
           `  [${exe}] ${s.frontmatter.name}  (${s.source})\n      ${s.frontmatter.description}\n`,
         );
+      }
+      continue;
+    }
+    if (input === '/snapshot') {
+      const snap = session.takeSnapshot();
+      const file = await session.persistSnapshot();
+      if (file) {
+        stdout.write(
+          `${GREEN}snapshot persisted${RESET}: ${file}\n` +
+            `  messages=${snap.messageCount}, estimatedTokens=${snap.estimatedTokens}, pendingToolCalls=${snap.pendingToolCalls}, compactions=${snap.compactionCount}\n`,
+        );
+      } else {
+        stdout.write(`${YELLOW}snapshot not persisted (missing xHarnessHome or write failed)${RESET}\n`);
       }
       continue;
     }

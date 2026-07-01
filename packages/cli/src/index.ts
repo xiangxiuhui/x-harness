@@ -17,6 +17,7 @@ const USAGE = `x_harness CLI (spiral 1)
 
 Usage:
   x chat [--resume <id>]      Start an interactive chat with DeepSeek.
+  x chat --snapshot-and-exit  Persist a runtime context snapshot, then exit.
   x sessions ls               List recorded sessions.
   x sessions show <id>        Print a session transcript (audit view).
   x web [--port N]            Start the local read-only web UI (ADR-0011).
