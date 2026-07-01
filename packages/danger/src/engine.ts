@@ -57,7 +57,19 @@ export class DangerEngine {
     });
     if (remaining.length === 0) return { decision: 'allow' };
 
-    const classes = new Set(remaining.map((h) => h.class));
+    // Pre-approval for Class B path prefixes. If every Class B hit's target
+    // path (in evidence.path) falls under a pre-approved prefix, those hits
+    // are suppressed. This is the mechanism for session-level "I trust writes
+    // to this directory" consent (e.g. skill authoring sessions).
+    const remaining2 = remaining.filter((h) => {
+      if (h.class !== 'B') return true;
+      const targetPath = String(h.evidence?.path ?? '');
+      if (!targetPath) return true; // can't check without a path
+      return !ctx.classBPathPreapprovals.some((prefix) => targetPath.startsWith(prefix));
+    });
+    if (remaining2.length === 0) return { decision: 'allow' };
+
+    const classes = new Set(remaining2.map((h) => h.class));
     const headline =
       classes.has('A') && classes.has('B')
         ? 'Action hits Class A (human account/financial) AND Class B (x_harness self-preservation).'
@@ -65,9 +77,9 @@ export class DangerEngine {
           ? 'Action hits Class A (human account / financial).'
           : 'Action hits Class B (x_harness self-preservation).';
 
-    const explanation = remaining.map((h) => `[${h.class}/${h.ruleId}] ${h.reason}`);
+    const explanation = remaining2.map((h) => `[${h.class}/${h.ruleId}] ${h.reason}`);
     const recoveryHints: string[] = [];
-    for (const h of remaining) {
+    for (const h of remaining2) {
       if (h.class !== 'B') continue;
       // Find matching rule
       const r = this.rules.find((rr) => rr.id === h.ruleId);
@@ -80,7 +92,7 @@ export class DangerEngine {
 
     return {
       decision: 'confirm',
-      hits: remaining,
+      hits: remaining2,
       headline,
       explanation,
       recoveryHints: recoveryHints.length > 0 ? recoveryHints : undefined,

@@ -126,8 +126,9 @@ export interface MemorySink {
   onToolApproval?(payload: {
     id: string;
     name: string;
-    decision: 'allow' | 'allow-and-preapprove' | 'deny';
+    decision: 'allow' | 'allow-and-preapprove' | 'allow-and-path-preapprove' | 'deny';
     preapprovedRuleIds?: string[];
+    preapprovedPathPrefix?: string;
   }): void | Promise<void>;
   onToolResult?(payload: {
     id: string;
@@ -153,6 +154,7 @@ export type ConfirmDangerHandler = (req: {
 export type DangerConfirmation =
   | { decision: 'allow' }
   | { decision: 'allow-and-preapprove'; ruleIds: string[] }
+  | { decision: 'allow-and-path-preapprove'; pathPrefix: string }
   | { decision: 'deny' };
 
 /**
@@ -215,6 +217,12 @@ export class Session {
   private readonly confirmDanger?: ConfirmDangerHandler;
   /** Mutable per-session pre-approvals (rule id -> true). */
   private classAPreapprovals: Record<string, boolean>;
+  /**
+   * Mutable per-session path-prefix pre-approvals for Class B.
+   * When the user pre-approves writes to a path, its prefix (the directory)
+   * is added here; subsequent writes under that prefix bypass the confirm.
+   */
+  private classBPathPreapprovals: string[] = [];
   private readonly memory?: MemorySink;
   private readonly provenanceConfig?: SessionOptions['provenance'];
   private readonly compactionOpts?: SessionOptions['compaction'];
@@ -643,6 +651,7 @@ export class Session {
             const ctx: DangerContext = {
               ...this.dangerContext,
               classAPreapprovals: this.classAPreapprovals,
+              classBPathPreapprovals: this.classBPathPreapprovals,
             };
             const verdict = this.dangerEngine.evaluate(
               {
@@ -693,6 +702,8 @@ export class Session {
                 decision: decision.decision,
                 preapprovedRuleIds:
                   decision.decision === 'allow-and-preapprove' ? decision.ruleIds : undefined,
+                preapprovedPathPrefix:
+                  decision.decision === 'allow-and-path-preapprove' ? decision.pathPrefix : undefined,
               });
               if (decision.decision === 'deny') {
                 allowed = false;
@@ -704,6 +715,9 @@ export class Session {
                   for (const id of decision.ruleIds) {
                     this.classAPreapprovals[id] = true;
                   }
+                }
+                if (decision.decision === 'allow-and-path-preapprove') {
+                  this.classBPathPreapprovals.push(decision.pathPrefix);
                 }
                 this.bus.publish({
                   actor: this.humanActor,

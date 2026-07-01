@@ -69,6 +69,13 @@ export interface DangerContext {
   classAPreapprovals: Readonly<Record<string, boolean>>;
   /** Names of skills available that could recover specific side-effects. */
   recoverSkillNames: ReadonlyArray<string>;
+  /**
+   * Pre-approved Class-B path prefixes for this session.
+   * Writes to paths under any of these prefixes bypass the confirm prompt.
+   * Set when the user approves a Class-B write and chooses to pre-approve
+   * the containing directory (e.g. for skill authoring sessions).
+   */
+  classBPathPreapprovals: ReadonlyArray<string>;
 }
 
 export function defaultDangerContext(over: Partial<DangerContext> = {}): DangerContext {
@@ -81,6 +88,7 @@ export function defaultDangerContext(over: Partial<DangerContext> = {}): DangerC
     envPrefixes: over.envPrefixes ?? ['X_HARNESS_'],
     classAPreapprovals: over.classAPreapprovals ?? {},
     recoverSkillNames: over.recoverSkillNames ?? [],
+    classBPathPreapprovals: over.classBPathPreapprovals ?? [],
   };
 }
 

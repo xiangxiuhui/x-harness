@@ -160,7 +160,7 @@ export const ruleA3GitForcePushShared: DangerRule = {
 export const ruleB1WriteXHarnessHome: DangerRule = {
   id: 'B1.write-x_harness-home',
   class: 'B',
-  describe: 'Writing into ~/.x_harness/** (except /scratch).',
+  describe: 'Writing into ~/.x_harness/** (except /scratch and /skills).',
   recoverableBy: ['recover.x_harness_home'],
   check(action: ProposedAction, ctx: DangerContext): RuleHit[] {
     if (action.kind !== 'tool-call') return [];
@@ -170,7 +170,13 @@ export const ruleB1WriteXHarnessHome: DangerRule = {
     const abs = absolutize(p, action.cwd);
     if (!ctx.xHarnessHome) return [];
     const scratch = `${ctx.xHarnessHome}/scratch`;
-    if (pathIsInside(abs, ctx.xHarnessHome) && !pathIsInside(abs, scratch)) {
+    // ADR-0008: skill creation is a first-class self-extension capability.
+    // Writing to ~/.x_harness/skills/ is trivially reversible (rm -rf) and
+    // does NOT threaten self-preservation (per ADR-0005 "5-minute recovery"
+    // test).  Excluding it here eliminates the primary friction source for
+    // skill authoring sessions.
+    const skillsDir = `${ctx.xHarnessHome}/skills`;
+    if (pathIsInside(abs, ctx.xHarnessHome) && !pathIsInside(abs, scratch) && !pathIsInside(abs, skillsDir)) {
       return [
         {
           ruleId: this.id,
@@ -205,12 +211,15 @@ export const ruleB2ShellTouchesSelf: DangerRule = {
       .filter((p): p is string => !!p)
       .map((p) => normalize(p));
     const scratch = ctx.xHarnessHome ? `${ctx.xHarnessHome}/scratch` : '';
+    // ADR-0008: skill creation paths are trivially reversible, same as scratch.
+    const skillsDir = ctx.xHarnessHome ? `${ctx.xHarnessHome}/skills` : '';
 
     const flag = (path: string, kind: string) => {
       const abs = absolutize(path, action.cwd);
       for (const root of selfRoots) {
         if (!pathIsInside(abs, root)) continue;
         if (scratch && pathIsInside(abs, scratch)) continue;
+        if (skillsDir && pathIsInside(abs, skillsDir)) continue;
         hits.push({
           ruleId: this.id,
           class: 'B',

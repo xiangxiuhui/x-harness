@@ -440,10 +440,25 @@ async function promptConfirm(
     }
   }
   const classAIds = verdict.hits.filter((h) => h.class === 'A').map((h) => h.ruleId);
-  const promptText =
-    classAIds.length > 0
-      ? `Allow this action? [y]es / [N]o / [a]llow & pre-approve (${classAIds.join(',')}) : `
-      : `Allow this action? [y]es / [N]o : `;
+  // Class B path-prefix pre-approval: extract the target directory from
+  // the first Class B hit's evidence.path, trimming to the parent directory.
+  // This lets the user say "allow all writes to this skill directory".
+  const classBPaths = verdict.hits
+    .filter((h) => h.class === 'B' && h.evidence?.path)
+    .map((h) => String(h.evidence!.path));
+  const classBDir = classBPaths.length > 0 ? parentDirOf(classBPaths[0]!) : null;
+
+  let promptText: string;
+  const options: string[] = ['y', 'N'];
+  if (classAIds.length > 0) {
+    promptText = `Allow this action? [y]es / [N]o / [a]llow & pre-approve (${classAIds.join(',')}) : `;
+    options.push('a');
+  } else if (classBDir) {
+    promptText = `Allow this action? [y]es / [N]o / [p]re-approve path (${truncate(classBDir, 50)}) : `;
+    options.push('p');
+  } else {
+    promptText = `Allow this action? [y]es / [N]o : `;
+  }
 
   // Loop on unrecognised input so a typo like "yew" doesn't silently deny.
   // Empty / "n" / "no" still mean deny — that's the [N] default.
@@ -462,11 +477,23 @@ async function promptConfirm(
       }
       return { decision: 'allow' };
     }
+    if (answer === 'p' || answer === 'preapprove' || answer === 'path') {
+      if (classBDir) {
+        return { decision: 'allow-and-path-preapprove', pathPrefix: classBDir };
+      }
+      return { decision: 'allow' };
+    }
     stdout.write(
-      `${YELLOW}  ?${RESET} unrecognised "${answer}" — please answer y / n${classAIds.length > 0 ? ' / a' : ''}.\n`,
+      `${YELLOW}  ?${RESET} unrecognised "${answer}" — please answer y / n${options.length > 2 ? ` / ${options[2]}` : ''}.\n`,
     );
   }
   return { decision: 'deny' };
+}
+
+/** Return the parent directory of a path (everything up to the last /). */
+function parentDirOf(p: string): string {
+  const slash = p.lastIndexOf('/');
+  return slash > 0 ? p.slice(0, slash + 1) : p;
 }
 
 function truncate(s: string, max: number): string {
