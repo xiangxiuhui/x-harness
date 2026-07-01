@@ -135,28 +135,20 @@ Do not redesign the whole event system immediately. The next safe step is:
 4. Emit `context.snapshot.persisted` when `persistSnapshot()` writes a file. ✅ landed
 5. Keep high-volume diagnostics as bounded health buffers, not JSONL. ⏭️ next
 
-## Manual validation loop
+## Internal validation loop
 
-To verify the full runtime→bus→JSONL→digest loop:
+The runtime snapshot audit loop is intentionally validated by an internal smoke script, not a user-facing chat command:
 
 ```bash
-# Non-interactive smoke test (does not call provider)
-x chat --snapshot-and-exit
-x sessions show <printed-session-id> | grep 'snapshot persisted'
-
-# Or inside a real interactive chat:
-x chat
-# note the printed session id, e.g. sess-abc123
-> /snapshot
-> /exit
-x sessions show sess-abc123 | grep 'snapshot persisted'
-ls ~/.x_harness/sessions/sess-abc123/snapshots/
+pnpm tsx tools/smoke-snapshot-audit.ts
 ```
 
 Expected:
 
-- CLI prints `context snapshot persisted: ...` from the bus subscriber
-- CLI prints `snapshot persisted: <file>` from the command handler
-- `x sessions show` includes a `📸 snapshot persisted ...` line
-- the snapshot JSON file exists under `sessions/<sid>/snapshots/`
+- `Session.persistSnapshot()` writes a snapshot JSON file under a temporary `sessions/<sid>/snapshots/` directory
+- it emits `context.snapshot.persisted` on `ActorBus`
+- classifier-gated bus→JSONL routing records the event
+- `digestEntry()` renders a `📸 snapshot persisted ...` line
+
+Do **not** expose this as `/snapshot` in normal `x chat` unless it becomes a deliberate product/debug command with UX and security review.
 

@@ -73,10 +73,8 @@ x chat                                         # 进入对话
 启动交互式对话。
 - 自动加载 territory + skills + 三个 builtin tool（`file.read` / `file.write` / `shell.run`）
 - `--resume`：把上个 session 的历史重放给模型，继续聊
-- `--snapshot-and-exit`：启动 session 后立即写 runtime snapshot 并退出；用于验证 `context.snapshot.persisted` 的 bus→JSONL 闭环，不调用 provider
 - 内置命令：
   - `/skills`：列出当前加载的 skills
-  - `/snapshot`：将当前 runtime context 快照写到 `~/.x_harness/sessions/<sid>/snapshots/`，并在 JSONL 追加 `context.snapshot.persisted` 审计事件
   - `/help`：查看交互命令
 - 退出：`/exit`、`/quit` 或 Ctrl+D
 
