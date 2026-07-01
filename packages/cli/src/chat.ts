@@ -309,6 +309,7 @@ export async function runChat(args: string[]): Promise<number> {
       `(doc-skills: ${docNames.join(', ') || '<none>'})\n` +
       `(territory: ${territoryNote}, ${territory.path})\n` +
       `(guard: ADR-0005, home=${xHarnessHome})\n` +
+      `(compaction: ${compactionBlock ? `${compactionBlock.config.threshold} threshold, ${compactionBlock.config.contextWindow} ctx window` : 'off (no config)'})\n` +
       `(commands: exit | /skills | /help    keys: Ctrl+C aborts reply, Ctrl+D exits)\n\n`,
   );
 

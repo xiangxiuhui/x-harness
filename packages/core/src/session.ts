@@ -29,6 +29,7 @@ import {
   type Summarizer,
   type Tokenizer,
 } from './compaction/index.js';
+import { estimateMessagesTokens, heuristicCount } from './compaction/token-estimator.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -158,6 +159,29 @@ export type DangerConfirmation =
   | { decision: 'deny' };
 
 /**
+ * ADR-0014 minimal landing — ContextSnapshot.
+ *
+ * A structured snapshot of what the provider will see on the next request.
+ * This is the minimal form that answers "what does the provider actually
+ * see right now?" without requiring the full Epoch/Snapshot refactoring.
+ *
+ * When ADR-0014 lands, this type will be extended to include epochId,
+ * baseline hash, and SafeProviderTurnBoundary invariants.
+ */
+export interface ContextSnapshot {
+  sessionId: string;
+  takenAt: number;
+  messageCount: number;
+  estimatedTokens: number;
+  hasSystemPrompt: boolean;
+  pendingToolCalls: number;
+  compactionCount: number;
+  lastCompaction: CompactionEvent | null;
+  /** Full messages array (omitted in persisted form to save space). */
+  messages: readonly Message[];
+}
+
+/**
  * Resolve the effective Summarizer based on SessionOptions:
  *   - explicit `null` → disabled
  *   - `enabled: false` → disabled
@@ -240,6 +264,11 @@ export class Session {
   /** How many tool-call rounds the model has issued since the last human
    *  message. Used by the autonomy heuristic to detect model-elaborated steps. */
   private toolRoundsSinceLastHuman = 0;
+  /**
+   * ADR-0014 minimal landing — compaction history for snapshots.
+   * Each entry is the CompactionEvent emitted by a successful compaction.
+   */
+  private compactionHistory: CompactionEvent[] = [];
 
   constructor(opts: SessionOptions) {
     this.id = opts.sessionId ?? `sess-${Math.random().toString(36).slice(2, 10)}`;
@@ -343,6 +372,7 @@ export class Session {
       if (!result.event) return null;
       this.messages.splice(0, this.messages.length, ...result.messages);
       await this.persistSidecars(preTrimmedSidecars);
+      this.compactionHistory.push(result.event);
       this.bus.publish({
         actor: { kind: 'system', subsystem: 'compaction' },
         kind: 'context.compacted',
@@ -408,6 +438,7 @@ export class Session {
         // Replace in place to preserve array identity for external refs.
         this.messages.splice(0, this.messages.length, ...result.messages);
         await this.persistSidecars(preTrimmedSidecars);
+        this.compactionHistory.push(result.event);
         this.bus.publish({
           actor: { kind: 'system', subsystem: 'compaction' },
           kind: 'context.compacted',
@@ -845,6 +876,75 @@ export class Session {
       });
       return { ok: r.ok, error: r.error, xattr: r.xattr as unknown as Record<string, unknown> };
     };
+  }
+
+  /**
+   * ADR-0014 minimal landing — ContextSnapshot.
+   *
+   * Returns a structured snapshot of what the provider will see on the
+   * next request, plus metadata (token estimate, compaction history,
+   * pending tool calls). This is the minimal form of ADR-0014's
+   * ContextSnapshot type: it can answer "what does the provider actually
+   * see right now?" without requiring the full Epoch/Snapshot refactoring.
+   *
+   * Future: when ADR-0014 lands, this method's return type becomes
+   * the canonical ContextSnapshot interface.
+   */
+  takeSnapshot(): ContextSnapshot {
+    const tokenize = this.compactionOpts?.tokenize ?? heuristicCount;
+    const tokens = estimateMessagesTokens(this.messages, tokenize);
+
+    // Check for pending (unreplied) tool calls
+    const open = new Set<string>();
+    for (const m of this.messages) {
+      if (m.role === 'assistant' && m.toolCalls) {
+        for (const c of m.toolCalls) open.add(c.id);
+      } else if (m.role === 'tool' && m.toolCallId) {
+        open.delete(m.toolCallId);
+      }
+    }
+
+    return {
+      sessionId: this.id,
+      takenAt: Date.now(),
+      messageCount: this.messages.length,
+      estimatedTokens: tokens,
+      hasSystemPrompt: this.messages.length > 0 && this.messages[0]!.role === 'system',
+      pendingToolCalls: open.size,
+      compactionCount: this.compactionHistory.length,
+      lastCompaction: this.compactionHistory[this.compactionHistory.length - 1] ?? null,
+      messages: this.messages.slice(),
+    };
+  }
+
+  /**
+   * Persist a snapshot to `<xHarnessHome>/sessions/<sid>/snapshots/` for
+   * post-mortem analysis. Best-effort — failures are logged to bus, not thrown.
+   */
+  async persistSnapshot(): Promise<string | null> {
+    if (!this.provenanceConfig?.xHarnessHome) return null;
+    const dir = join(this.provenanceConfig.xHarnessHome, 'sessions', this.id, 'snapshots');
+    const snap = this.takeSnapshot();
+    const ts = new Date(snap.takenAt).toISOString().replace(/[:.]/g, '-');
+    const file = join(dir, `snap-${ts}.json`);
+    try {
+      await mkdir(dir, { recursive: true });
+      // Strip messages from the persisted form (they're large and already
+      // in JSONL). Keep the metadata envelope.
+      const envelope = { ...snap, messages: undefined };
+      await writeFile(file, JSON.stringify(envelope, null, 2), 'utf8');
+      return file;
+    } catch (err) {
+      this.bus.publish({
+        actor: { kind: 'system', subsystem: 'snapshot' },
+        kind: 'error',
+        payload: {
+          where: 'persistSnapshot',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+      return null;
+    }
   }
 
   snapshot(): readonly Message[] {
