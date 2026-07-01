@@ -1,7 +1,7 @@
 # ADR-0013 Dogfood Report — Real DeepSeek Long Conversation
 
 **Date:** 2026-06-30
-**Driver:** `tools/dogfood-compaction.ts` + `tools/dogfood-inspect-summary.ts`
+**Driver:** historical one-off drivers `tools/dogfood-compaction.ts` + `tools/dogfood-inspect-summary.ts` (removed after this report; future cases belong in `tests/smoke/` or `.codeflicker/skills/x-harness-real-dogfood`).
 **Models:** `deepseek-reasoner` (main) + `deepseek-chat` (auxModel for summarization)
 **Setting:** threshold=0.35, contextWindow=8000, headN=2-3, recentN=4-6
 **Outcome:** ✅ Plumbing verified end-to-end on real network. Found + fixed one prompt-quality issue. Tests grew 108 → 112.
@@ -14,7 +14,7 @@
 
 ## Detailed Findings
 
-### Run 1 — `tools/dogfood-compaction.ts` (6 turns)
+### Run 1 — historical `tools/dogfood-compaction.ts` (6 turns; driver removed after report)
 
 | Metric | Value |
 |---|---|
@@ -39,7 +39,7 @@
 6. Summary is inserted with `meta.compacted = true` and the splice preserves head + recent slices (Step 1 ✓)
 7. The bus emits `context.compacted` with full `CompactionEvent` payload (Step 2 ✓)
 
-### Run 2 — `tools/dogfood-inspect-summary.ts` (8 turns, headN=2 recentN=4)
+### Run 2 — historical `tools/dogfood-inspect-summary.ts` (8 turns, headN=2 recentN=4; driver removed after report)
 
 Compaction fires before turn 6. Final transcript shape:
 
@@ -112,8 +112,8 @@ Output: prose only, ≤ 400 words.
 
 ## Files
 
-- `tools/dogfood-compaction.ts` — main harness, configurable via env
-- `tools/dogfood-inspect-summary.ts` — variant that surfaces the actual summary text
+- Historical `tools/dogfood-compaction.ts` — removed after findings were captured; future real-network cases should be added to `.codeflicker/skills/x-harness-real-dogfood` behind `--with-provider`.
+- Historical `tools/dogfood-inspect-summary.ts` — removed after findings were captured; summary-quality checks should become deterministic tests or opt-in dogfood cases.
 - `/tmp/xh-dogfood-events.jsonl` — JSONL event log from the 6-turn run
 
 ## Resolution — Prompt Fix Applied + Verified

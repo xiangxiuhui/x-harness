@@ -12,7 +12,11 @@ A debug entry point can change:
 - security posture (new ways to dump context, create durable artifacts, or bypass normal flows)
 - support burden (users rely on unstable internal behavior)
 
-Therefore dogfood and smoke-test functionality should live in tests or `tools/` unless deliberately promoted through an ADR/product review.
+Therefore dogfood and smoke-test functionality should live in package tests, `tests/smoke/`, or local project skills under `.codeflicker/skills/` unless deliberately promoted through an ADR/product review.
+
+## Closed-loop validation
+
+The required push → install/update → installed CLI dogfood loop is defined in [`docs/test-strategy.md`](test-strategy.md). For runtime/install/CLI changes, this loop is a necessary validation gate, not an optional afterthought.
 
 ## Recent artifacts
 
@@ -21,15 +25,15 @@ Therefore dogfood and smoke-test functionality should live in tests or `tools/` 
 | `docs/dogfood-2026-06-30-compaction.md` | Real-network compaction dogfood report | No | Keep as engineering evidence |
 | `docs/dogfood-2026-07-01-discover-skills-session.md` | UX/friction dogfood report | No | Keep as engineering evidence |
 | `docs/dogfood-2026-07-01-discover-skills-correction.md` | Correction report for audit/runtime truth gap | No | Keep as engineering evidence |
-| `tools/dogfood-compaction.ts` | Real-network compaction dogfood driver | No | Keep internal; not install-time path |
-| `tools/dogfood-inspect-summary.ts` | Summary quality dogfood helper | No | Keep internal |
-| `tools/smoke-snapshot-audit.ts` | Offline runtime snapshot → bus → JSONL → digest smoke | No | Keep internal semi-integration test |
+| `tools/dogfood-compaction.ts` | Historical real-network compaction dogfood driver | No | Removed from source tree after report was captured; use installed CLI dogfood skill for future cases |
+| `tools/dogfood-inspect-summary.ts` | Historical summary quality inspection helper | No | Removed from source tree after report was captured; findings remain in `docs/dogfood-2026-06-30-compaction.md` |
+| `tests/smoke/snapshot-audit.ts` | Offline runtime snapshot → bus → JSONL → digest smoke | No | Keep as internal semi-integration test |
 | `packages/core/test/bus.test.ts` | Unit coverage for event id/durability | No | Keep as normal unit test |
 | `Session.takeSnapshot()` | Runtime-truth inspection API | Not directly | Keep as internal API / future debug foundation |
 | `Session.persistSnapshot()` | Snapshot sidecar + audit event | Not directly | Keep internal; no chat command |
 | `context.snapshot.persisted` MemoryEntry | Audit index for snapshot artifacts | Indirectly via `x sessions show` if produced internally | Keep |
 | `x chat /snapshot` | Manual smoke validation command | Yes | Removed; do not expose by default |
-| `x chat --snapshot-and-exit` | Non-interactive smoke validation command | Yes | Removed; replaced by `tools/smoke-snapshot-audit.ts` |
+| `x chat --snapshot-and-exit` | Non-interactive smoke validation command | Yes | Removed; replaced by `tests/smoke/snapshot-audit.ts` |
 
 ## Why `/snapshot` was removed
 
@@ -55,7 +59,7 @@ Before asking a user to install-test a version, the local branch should pass:
 ```bash
 npm run typecheck
 for f in packages/core/test/*.test.ts; do pnpm tsx "$f"; done
-pnpm tsx tools/smoke-snapshot-audit.ts
+pnpm tsx tests/smoke/snapshot-audit.ts
 ```
 
 Then, for actual installer validation:

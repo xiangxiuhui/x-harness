@@ -9,6 +9,9 @@
     "x": "tsx packages/cli/src/index.ts",
     "chat": "tsx packages/cli/src/index.ts chat",
     "typecheck": "tsc -b --pretty",
+    "test:core": "for f in packages/core/test/*.test.ts; do pnpm tsx \"$f\"; done",
+    "test:smoke": "pnpm tsx tests/smoke/snapshot-audit.ts",
+    "test:closed-loop:local": "npm run typecheck && npm run test:core && npm run test:smoke",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo"
   },
   "devDependencies": {

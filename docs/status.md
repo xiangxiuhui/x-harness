@@ -26,6 +26,7 @@
 | 2026-07-01 | **P0-1 可观测性修复**：`chat.ts` 新增 `session.bus.subscribe()` 持久化 `context.compacted` + `error` 事件到 JSONL；CLI 显示压缩通知 `🗜 compacted (tool-output-prune) 35283→18200 tokens, 45ms`。`MemoryEntry` 类型新增 `context.compacted` + `error` kinds；`digestEntry` 新增对应格式化。关闭了"grep 0 hits → 误判禁用"的缺口。 |
 | 2026-07-01 | **P0-2 max-rounds 跨轮污染修复**：删除 `session.ts` 中 `this.messages.push({ role: 'user', content: '…please respond without calling more tools' })`，改为 bus `error` 事件。该 provider-visible 消息原本跨 turn 残留，导致模型在新 turn 中仍说"I reached my limit"。合成 tool 回复（协议合规）保留。 |
 | 2026-07-01 | **事件可观测性 P1**：参考 opencode/openclaw 后收敛最小事件治理切口：`ActorBus` 事件已有稳定 id；新增 `actorEventDurability(kind)` 分类器；CLI bus→JSONL bridge 改为按 audit 分类路由；`Session.persistSnapshot()` 成功落盘后 emit `context.snapshot.persisted` 并进入 JSONL/digest，形成 runtime snapshot 的审计索引。 |
+| 2026-07-01 | **测试闭环升级**：把 `push origin main → install.sh 更新 ~/.x_harness/src → installed CLI dogfood` 定义为 runtime/install/CLI 改动的必要闭环；新增本地 CodeFlicker skills `x-harness-install-update` 与 `x-harness-real-dogfood`；新增 `docs/test-strategy.md`；将 snapshot smoke 迁移到 `tests/smoke/`，删除早期一次性 `tools/dogfood-*` 脚本。 |
 
 这是螺旋开发的正确暴露——错误前提通过真实使用浮出水面，回退一个 commit 远比堆十个 commit 在错的假设上便宜。
 

@@ -5,15 +5,15 @@
  * observability loop without exposing debug snapshot controls in normal chat UX.
  *
  * Run:
- *   pnpm tsx tools/smoke-snapshot-audit.ts
+ *   pnpm tsx tests/smoke/snapshot-audit.ts
  */
 
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ChatChunk, ChatRequest, Provider } from '../packages/provider/src/index.js';
-import { Session, actorEventDurability, type ActorEvent } from '../packages/core/src/index.js';
-import { MemoryStore, readSession, digestEntry } from '../packages/memory/src/index.js';
+import type { ChatChunk, ChatRequest, Provider } from '../../packages/provider/src/index.js';
+import { Session, actorEventDurability, type ActorEvent } from '../../packages/core/src/index.js';
+import { MemoryStore, readSession, digestEntry } from '../../packages/memory/src/index.js';
 
 class FakeProvider implements Provider {
   readonly name = 'fake';

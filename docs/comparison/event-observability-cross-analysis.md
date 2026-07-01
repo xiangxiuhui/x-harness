@@ -140,7 +140,7 @@ Do not redesign the whole event system immediately. The next safe step is:
 The runtime snapshot audit loop is intentionally validated by an internal smoke script, not a user-facing chat command:
 
 ```bash
-pnpm tsx tools/smoke-snapshot-audit.ts
+pnpm tsx tests/smoke/snapshot-audit.ts
 ```
 
 Expected:
