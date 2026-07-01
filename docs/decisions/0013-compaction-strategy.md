@@ -105,6 +105,28 @@ spiral-2 close 时，x_harness 的"压缩策略"实际状态只有一条 max-rou
 - token 预估精度有限，阈值 0.7 是经验值，需要 spiral-3 末做一次校准。
 - summarize 不可逆性：原始 history 仍在 rollout JSONL 里完整保留（参考 ADR-0017 候选），活跃 context 才是 projection——这是 opencode/codex 的共识，本 ADR 默认采纳。
 
+## 2026-07-01 校正 — 三真值层分离（Three Truth Layers）
+
+Dogfood sess-tkf3srzi 暴露了一个结构性的可观测性缺陷：外部分析师（Claude Opus 4.7）`grep context.compacted` 在 JSONL 中命中 0 条 → 误判"compaction 未启用"。实际 compaction **确实触发了**（sidecar 文件存在），但事件只进入了 ActorBus 未持久化到 JSONL。
+
+根因：系统存在三个真值层，但缺少持久化桥接：
+
+| 层 | 内容 | 可变性 | 举例 |
+|---|---|---|---|
+| **Audit truth** | JSONL append-only log | 不可变 | `~/.x_harness/memory/sess-*.jsonl` |
+| **Runtime truth** | `Session.messages[]` | 可变（compaction 会改写） | provider 每轮实际看到的内容 |
+| **Observable truth** | ActorBus events + sidecar files | 事件即发即逝，sidecar 持久 | `context.compacted` bus event, `<sid>/tool-outputs/<id>.txt` |
+
+**核心原则**：
+1. **JSONL ≠ runtime truth** — JSONL 是审计日志，记录事件发生；`Session.messages` 是活跃上下文，compaction 会改写。两者不可互推。
+2. **Bus 事件必须桥接到 JSONL** — 否则"不在审计日志 = 没发生"的误判会重复出现。
+3. **Sidecar 是物理证据** — 当 audit 和 runtime 都不足以证明时，sidecar 文件是独立物证。
+
+**已修复**：
+- `chat.ts` 新增 `session.bus.subscribe()` 持久化 `context.compacted` + `error` 到 JSONL ✓
+- `MemoryEntry` 类型新增对应 kinds ✓
+- max-rounds 合成 user 消息改为 bus `error` 事件（不再污染 runtime truth）✓
+
 ## Open Questions
 
 1. compaction trigger 是否要看 turn budget 之外的信号？（比如 user 显式要求"reset"？）——暂时不做，留 escape hatch `/compact` 给用户。
@@ -121,6 +143,7 @@ spiral-2 close 时，x_harness 的"压缩策略"实际状态只有一条 max-rou
 | 3 | `provider` 接口加可选 `auxModel`；`compaction/provider-summarizer.ts` 路由到 aux；Session 在未传 summarizer 时自动构造；增加 `compactNow(reason)` 元接口（**保留给模型/记忆偏好触发，不暴露 CLI**） | mod | ✅ Done — 21 测试 |
 | 4 | config: `~/.x_harness/config.json` 增加 `compaction: { threshold, headN, recentN, toolOutputMax }` 默认值；`chat.ts` 接入；safe defaults + 未知 key 保留 | mod | ✅ Done — 16 测试 |
 | 5 | 真实 tokenizer（tiktoken-js）替换 heuristic estimator | new | ✅ Done — 16 测试 |
+| 6 | **可观测性桥接**（2026-07-01 P0 修复）：bus `context.compacted` + `error` 事件持久化到 JSONL + CLI 一行通知；`MemoryEntry` 类型补齐；max-rounds 合成 user 消息改为 bus error 事件（不再跨轮污染 runtime truth） | mod | ✅ Done |
 
 **Step 3 设计补充（2026-06-30）**：
 - x_harness **autonomy-first**：不为人类暴露 `x compact` CLI；上下文管理是 harness 内部职责。
