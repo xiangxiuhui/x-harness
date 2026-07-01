@@ -33,6 +33,18 @@ export type MemoryEntry =
   | MemoryEntryBase<'tool.result', { id: string; name: string; output: string; error?: boolean; blocked?: boolean }>
   | MemoryEntryBase<'session.end', { reason: 'bye' | 'eof' | 'error'; turns: number }>
   | MemoryEntryBase<'territory.loaded', { path: string; version: number | null; zones: string[]; generatedDefault: boolean }>
+  | MemoryEntryBase<'context.compacted', {
+      trigger: 'auto' | 'manual';
+      reason: 'user-requested' | 'context-limit' | 'model-downshift' | 'sources-changed';
+      phase: 'standalone' | 'pre-turn' | 'mid-turn';
+      strategy: 'memento' | 'tool-output-prune' | 'prefix-compaction';
+      tokensBefore: number;
+      tokensAfter: number;
+      recentKept: number;
+      headKept: number;
+      durationMs: number;
+    }>
+  | MemoryEntryBase<'error', { where: string; message: string; subsystem?: string }>
   | MemoryEntryBase<'provenance.attach', { provenance: { v: 1; ts: string; sessionId: string; originatingHumanMessageSeq?: number; originatingHumanMessage?: string; executor: unknown; autonomy: string; humanApproval?: unknown; sessionTrigger?: string; xHarnessHome: string; path: string }; xattrOk: boolean; xattrError?: string }>
   | MemoryEntryBase<'evolution.feedback', { targetSeq: number; targetKind: string; verdict: 'accept' | 'reject' | 'i-would-have'; note?: string; suggestion?: string }>;
 

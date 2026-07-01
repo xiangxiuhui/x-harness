@@ -572,11 +572,15 @@ export class Session {
             blocked: true,
           });
         }
-        this.messages.push({
-          role: 'user',
-          content:
-            '[x_harness] tool-call loop hit the max-rounds safety cap; ' +
-            'please respond to the user without calling more tools.',
+        this.bus.publish({
+          actor: { kind: 'system', subsystem: 'session' },
+          kind: 'error',
+          payload: {
+            where: 'maxToolRounds',
+            subsystem: 'session',
+            message:
+              'tool-call loop hit the max-rounds safety cap; skipped execution and ended the turn.',
+          },
         });
         yield { kind: 'turn.done' };
         return;

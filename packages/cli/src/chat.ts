@@ -15,6 +15,8 @@ import {
   type DangerConfirmation,
   type MemorySink,
   type TerritorySummary,
+  type ActorEvent,
+  type CompactionEvent,
 } from '@x_harness/core';
 import { createDeepSeekProviderFromEnv } from '@x_harness/provider';
 import { buildSkillRegistry, type Skill } from '@x_harness/skills';
@@ -259,6 +261,40 @@ export async function runChat(args: string[]): Promise<number> {
           },
         }
       : {}),
+  });
+
+  session.bus.subscribe((ev: ActorEvent) => {
+    if (ev.kind === 'context.compacted') {
+      const payload = ev.payload as CompactionEvent;
+      void store.append({
+        actor: { kind: 'system', subsystem: 'compaction' },
+        kind: 'context.compacted',
+        ts: new Date(ev.ts).toISOString(),
+        payload,
+      });
+      stdout.write(
+        `${DIM}(context compacted: ${payload.strategy}, ${payload.tokensBefore} → ${payload.tokensAfter} tokens, ${payload.durationMs}ms)${RESET}\n`,
+      );
+      return;
+    }
+    if (ev.kind === 'error') {
+      const payload = ev.payload as { where: string; message: string; subsystem?: string };
+      const subsystem =
+        payload.subsystem ?? (ev.actor.kind === 'system' ? ev.actor.subsystem : 'unknown');
+      void store.append({
+        actor: { kind: 'system', subsystem },
+        kind: 'error',
+        ts: new Date(ev.ts).toISOString(),
+        payload: {
+          where: payload.where,
+          message: payload.message,
+          subsystem,
+        },
+      });
+      stdout.write(
+        `${YELLOW}(system event: ${payload.where}${payload.message ? ` — ${payload.message}` : ''})${RESET}\n`,
+      );
+    }
   });
 
   const skillNames = registry.executable().map((s) => s.frontmatter.name);
