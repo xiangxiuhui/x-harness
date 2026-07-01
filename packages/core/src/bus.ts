@@ -15,7 +15,37 @@ export type ActorEventKind =
   | 'session.start'
   | 'session.end'
   | 'context.compacted'
+  | 'context.snapshot.persisted'
   | 'error';
+
+export type ActorEventDurability = 'ephemeral' | 'audit' | 'sidecar';
+
+/**
+ * Classifies runtime events for observability routing.
+ *
+ * Policy:
+ * - audit: semantic/structural events that explain future runtime state
+ * - sidecar: durable artifacts outside JSONL (also usually audit-indexed)
+ * - ephemeral: live-only chatter / UI stream events
+ */
+export function actorEventDurability(kind: ActorEventKind): ActorEventDurability {
+  switch (kind) {
+    case 'session.start':
+    case 'session.end':
+    case 'context.compacted':
+    case 'context.snapshot.persisted':
+    case 'error':
+      return 'audit';
+    case 'message.user':
+    case 'message.assistant.delta':
+    case 'message.assistant.done':
+    case 'tool.call':
+    case 'tool.result':
+      // These already have first-class MemorySink persistence paths; do not
+      // double-write them via the generic bus bridge.
+      return 'ephemeral';
+  }
+}
 
 export interface ActorEvent {
   id: string;

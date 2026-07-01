@@ -11,6 +11,7 @@ import {
   loadConfig,
   compactionFromConfig,
   makeTiktokenTokenizer,
+  actorEventDurability,
   type ConfirmDangerHandler,
   type DangerConfirmation,
   type MemorySink,
@@ -264,6 +265,8 @@ export async function runChat(args: string[]): Promise<number> {
   });
 
   session.bus.subscribe((ev: ActorEvent) => {
+    if (actorEventDurability(ev.kind) !== 'audit') return;
+
     if (ev.kind === 'context.compacted') {
       const payload = ev.payload as CompactionEvent;
       void store.append({
@@ -277,6 +280,28 @@ export async function runChat(args: string[]): Promise<number> {
       );
       return;
     }
+
+    if (ev.kind === 'context.snapshot.persisted') {
+      const payload = ev.payload as {
+        sessionId: string;
+        path: string;
+        messageCount: number;
+        estimatedTokens: number;
+        pendingToolCalls: number;
+        compactionCount: number;
+      };
+      void store.append({
+        actor: { kind: 'system', subsystem: 'snapshot' },
+        kind: 'context.snapshot.persisted',
+        ts: new Date(ev.ts).toISOString(),
+        payload,
+      });
+      stdout.write(
+        `${DIM}(context snapshot persisted: ${payload.messageCount} messages, ~${payload.estimatedTokens} tokens)${RESET}\n`,
+      );
+      return;
+    }
+
     if (ev.kind === 'error') {
       const payload = ev.payload as { where: string; message: string; subsystem?: string };
       const subsystem =

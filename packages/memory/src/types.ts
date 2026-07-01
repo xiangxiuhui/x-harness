@@ -44,6 +44,14 @@ export type MemoryEntry =
       headKept: number;
       durationMs: number;
     }>
+  | MemoryEntryBase<'context.snapshot.persisted', {
+      sessionId: string;
+      path: string;
+      messageCount: number;
+      estimatedTokens: number;
+      pendingToolCalls: number;
+      compactionCount: number;
+    }>
   | MemoryEntryBase<'error', { where: string; message: string; subsystem?: string }>
   | MemoryEntryBase<'provenance.attach', { provenance: { v: 1; ts: string; sessionId: string; originatingHumanMessageSeq?: number; originatingHumanMessage?: string; executor: unknown; autonomy: string; humanApproval?: unknown; sessionTrigger?: string; xHarnessHome: string; path: string }; xattrOk: boolean; xattrError?: string }>
   | MemoryEntryBase<'evolution.feedback', { targetSeq: number; targetKind: string; verdict: 'accept' | 'reject' | 'i-would-have'; note?: string; suggestion?: string }>;

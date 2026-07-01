@@ -933,6 +933,18 @@ export class Session {
       // in JSONL). Keep the metadata envelope.
       const envelope = { ...snap, messages: undefined };
       await writeFile(file, JSON.stringify(envelope, null, 2), 'utf8');
+      this.bus.publish({
+        actor: { kind: 'system', subsystem: 'snapshot' },
+        kind: 'context.snapshot.persisted',
+        payload: {
+          sessionId: snap.sessionId,
+          path: file,
+          messageCount: snap.messageCount,
+          estimatedTokens: snap.estimatedTokens,
+          pendingToolCalls: snap.pendingToolCalls,
+          compactionCount: snap.compactionCount,
+        },
+      });
       return file;
     } catch (err) {
       this.bus.publish({

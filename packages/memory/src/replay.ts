@@ -106,6 +106,8 @@ export function digestEntry(e: MemoryEntry): string {
       return `[${t}] sys:provenance ${e.payload.xattrOk ? '✓' : '✗'} ${e.payload.provenance.path} (${e.payload.provenance.autonomy})`;
     case 'context.compacted':
       return `[${t}] 🗜️ compacted (${e.payload.strategy}) ${e.payload.tokensBefore}→${e.payload.tokensAfter} tokens, ${e.payload.durationMs}ms`;
+    case 'context.snapshot.persisted':
+      return `[${t}] 📸 snapshot persisted ${e.payload.messageCount} messages, ~${e.payload.estimatedTokens} tokens → ${e.payload.path}`;
     case 'error':
       return `[${t}] ❌ ${e.payload.where}${e.payload.message ? `: ${oneLine(e.payload.message, 80)}` : ''}`;
     case 'evolution.feedback': {
