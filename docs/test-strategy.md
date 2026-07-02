@@ -67,6 +67,14 @@ Use only for model-loop behavior that cannot be validated offline:
 bash .codeflicker/skills/x-harness-real-dogfood/scripts/real-cli-dogfood.sh --home "$HOME/.x_harness" --with-provider
 ```
 
+For the real compaction long-task case:
+
+```bash
+bash .codeflicker/skills/x-harness-real-dogfood/scripts/real-cli-dogfood.sh --home "$HOME/.x_harness" --case real-compaction --with-provider
+```
+
+This runs `tests/dogfood/real-compaction-case.ts`, simulating a human long task around push→install→test SOP and skill reuse, then checking whether the compacted summary preserved the goal, concrete paths, validation evidence, and early-turn signal.
+
 Provider tests require API keys and can cost money, so they are never part of the default gate.
 
 ## 2. Test case hierarchy
@@ -80,7 +88,7 @@ The test suite follows the harness architecture: decisions create invariants, in
 | L2 component/integration | Multiple modules with fake provider / fake home | `packages/core/test`, `packages/cli/scripts/e2e-*.ts` | Session compaction, max-rounds protocol, shell provenance | runtime loop changes |
 | L3 smoke | Offline end-to-end slice with real storage | `tests/smoke/*.ts` | snapshot → bus → JSONL → digest | observability/audit/storage changes |
 | L4 installed CLI | Pushed main installed into `~/.x_harness` | `.codeflicker/skills/x-harness-real-dogfood` | `x version`, installed typecheck, core tests, smoke, sessions ls | release-ready changes |
-| L5 real provider | Real model + API keys + real long task | dogfood skill opt-in + reports | compaction quality, skill-loading UX, summary quality | model behavior / prompt quality |
+| L5 real provider | Real model + API keys + real long task | `tests/dogfood/*.ts` + dogfood skill opt-in + reports | `real-compaction-case.ts`, compaction quality, skill-loading UX, summary quality | model behavior / prompt quality |
 
 ## 3. Architecture-to-test map
 
